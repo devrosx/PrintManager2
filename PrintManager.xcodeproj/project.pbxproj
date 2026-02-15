@@ -1,0 +1,475 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 55;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		MAIN000001 /* PrintManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINFILE01 /* PrintManagerApp.swift */; };
+		MAIN000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = MAINFILE02 /* Assets.xcassets */; };
+		MODEL00001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE1 /* AppState.swift */; };
+		MODEL00002 /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE2 /* FileItem.swift */; };
+		MODEL00003 /* CompressionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE3 /* CompressionModels.swift */; };
+		MODEL00004 /* CompressionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE4 /* CompressionSettings.swift */; };
+		MODEL00005 /* PrinterPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE5 /* PrinterPreset.swift */; };
+		SERV000001 /* PrintService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE01 /* PrintService.swift */; };
+		SERV000002 /* PDFService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE02 /* PDFService.swift */; };
+		SERV000003 /* ImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE03 /* ImageService.swift */; };
+		SERV000004 /* FileParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE04 /* FileParser.swift */; };
+		SERV000005 /* SmartCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE05 /* SmartCropService.swift */; };
+		SERV000006 /* OfficeConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE06 /* OfficeConversionService.swift */; };
+		SERV000007 /* BlankPageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE07 /* BlankPageService.swift */; };
+		SERV000008 /* PDFInfoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE08 /* PDFInfoService.swift */; };
+		SERV000009 /* PageColorAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE09 /* PageColorAnalyzer.swift */; };
+		SERV000010 /* CloudConvertService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE10 /* CloudConvertService.swift */; };
+		SERV000011 /* GoogleDocsConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE11 /* GoogleDocsConversionService.swift */; };
+		SERV000012 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE12 /* MenuBarManager.swift */; };
+		SERV000013 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE13 /* NotificationManager.swift */; };
+		UTIL000001 /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = UTILFILE01 /* Utilities.swift */; };
+		VIEW000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE01 /* ContentView.swift */; };
+		VIEW000002 /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE02 /* PreviewView.swift */; };
+		VIEW000003 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE03 /* SettingsView.swift */; };
+		VIEW000004 /* CropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE04 /* CropView.swift */; };
+		VIEW000005 /* CompressionDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE05 /* CompressionDialog.swift */; };
+		VIEW000006 /* DropZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE06 /* DropZoneView.swift */; };
+		VIEW000007 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE07 /* ToolbarView.swift */; };
+		VIEW000008 /* PDFInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE08 /* PDFInfoView.swift */; };
+		VIEW000009 /* OfficeImportDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE09 /* OfficeImportDialog.swift */; };
+		EXTN000001 /* PDFPage+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXTNFILE01 /* PDFPage+Compression.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		MAINFILE01 /* PrintManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintManagerApp.swift; sourceTree = "<group>"; };
+		MAINFILE02 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		MAINFILE03 /* .app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = .app; sourceTree = BUILT_PRODUCTS_DIR; };
+		MODELFILE1 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		MODELFILE2 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
+		MODELFILE3 /* CompressionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionModels.swift; sourceTree = "<group>"; };
+		MODELFILE4 /* CompressionSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionSettings.swift; sourceTree = "<group>"; };
+		MODELFILE5 /* PrinterPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrinterPreset.swift; sourceTree = "<group>"; };
+		SERVFILE01 /* PrintService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintService.swift; sourceTree = "<group>"; };
+		SERVFILE02 /* PDFService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFService.swift; sourceTree = "<group>"; };
+		SERVFILE03 /* ImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageService.swift; sourceTree = "<group>"; };
+		SERVFILE04 /* FileParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileParser.swift; sourceTree = "<group>"; };
+		SERVFILE05 /* SmartCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartCropService.swift; sourceTree = "<group>"; };
+		SERVFILE06 /* OfficeConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeConversionService.swift; sourceTree = "<group>"; };
+		SERVFILE07 /* BlankPageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlankPageService.swift; sourceTree = "<group>"; };
+		SERVFILE08 /* PDFInfoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFInfoService.swift; sourceTree = "<group>"; };
+		SERVFILE09 /* PageColorAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageColorAnalyzer.swift; sourceTree = "<group>"; };
+		SERVFILE10 /* CloudConvertService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConvertService.swift; sourceTree = "<group>"; };
+		SERVFILE11 /* GoogleDocsConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDocsConversionService.swift; sourceTree = "<group>"; };
+		SERVFILE12 /* MenuBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarManager.swift; sourceTree = "<group>"; };
+		SERVFILE13 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		UTILFILE01 /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
+		VIEWFILE01 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		VIEWFILE02 /* PreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewView.swift; sourceTree = "<group>"; };
+		VIEWFILE03 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		VIEWFILE04 /* CropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropView.swift; sourceTree = "<group>"; };
+		VIEWFILE05 /* CompressionDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionDialog.swift; sourceTree = "<group>"; };
+		VIEWFILE06 /* DropZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropZoneView.swift; sourceTree = "<group>"; };
+		VIEWFILE07 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
+		VIEWFILE08 /* PDFInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFInfoView.swift; sourceTree = "<group>"; };
+		VIEWFILE09 /* OfficeImportDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeImportDialog.swift; sourceTree = "<group>"; };
+		EXTNFILE01 /* PDFPage+Compression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PDFPage+Compression.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FRAMEWORKS1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		MAINGROUP1 /* PrintManager */ = {
+			isa = PBXGroup;
+			children = (
+				MAINFILE01 /* PrintManagerApp.swift */,
+				MODELGROUP /* Models */,
+				VIEWSGROUP /* Views */,
+				SERVSGROUP /* Services */,
+				EXTNGROUP1 /* Extensions */,
+				UTILGROUP1 /* Utilities */,
+				MAINFILE02 /* Assets.xcassets */,
+			);
+			path = PrintManager;
+			sourceTree = "<group>";
+		};
+		MODELGROUP /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				MODELFILE1 /* AppState.swift */,
+				MODELFILE2 /* FileItem.swift */,
+				MODELFILE3 /* CompressionModels.swift */,
+				MODELFILE4 /* CompressionSettings.swift */,
+				MODELFILE5 /* PrinterPreset.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		PRODGROUP1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				MAINFILE03 /* .app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		ROOTGROUP1 = {
+			isa = PBXGroup;
+			children = (
+				MAINGROUP1 /* PrintManager */,
+				PRODGROUP1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		SERVSGROUP /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				SERVFILE01 /* PrintService.swift */,
+				SERVFILE02 /* PDFService.swift */,
+				SERVFILE03 /* ImageService.swift */,
+				SERVFILE04 /* FileParser.swift */,
+				SERVFILE05 /* SmartCropService.swift */,
+				SERVFILE06 /* OfficeConversionService.swift */,
+				SERVFILE07 /* BlankPageService.swift */,
+				SERVFILE08 /* PDFInfoService.swift */,
+				SERVFILE09 /* PageColorAnalyzer.swift */,
+				SERVFILE10 /* CloudConvertService.swift */,
+				SERVFILE11 /* GoogleDocsConversionService.swift */,
+				SERVFILE12 /* MenuBarManager.swift */,
+				SERVFILE13 /* NotificationManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		EXTNGROUP1 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				EXTNFILE01 /* PDFPage+Compression.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		UTILGROUP1 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				UTILFILE01 /* Utilities.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		VIEWSGROUP /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				VIEWFILE01 /* ContentView.swift */,
+				VIEWFILE02 /* PreviewView.swift */,
+				VIEWFILE03 /* SettingsView.swift */,
+				VIEWFILE04 /* CropView.swift */,
+				VIEWFILE05 /* CompressionDialog.swift */,
+				VIEWFILE06 /* DropZoneView.swift */,
+				VIEWFILE07 /* ToolbarView.swift */,
+				VIEWFILE08 /* PDFInfoView.swift */,
+				VIEWFILE09 /* OfficeImportDialog.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		MAINTARGET /* PrintManager */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BUILDCONF1 /* Build configuration list for PBXNativeTarget "PrintManager" */;
+			buildPhases = (
+				SOURCES001 /* Sources */,
+				FRAMEWORKS1 /* Frameworks */,
+				RESOURCES1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PrintManager;
+			productName = PrintManager;
+			productReference = MAINFILE03 /* .app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		MAINPROJCT /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = BUILDCONF2 /* Build configuration list for PBXProject "PrintManager" */;
+			compatibilityVersion = "Xcode 13.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = ROOTGROUP1;
+			productRefGroup = PRODGROUP1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				MAINTARGET /* PrintManager */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RESOURCES1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				MAIN000002 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		SOURCES001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				MAIN000001 /* PrintManagerApp.swift in Sources */,
+				MODEL00001 /* AppState.swift in Sources */,
+				MODEL00002 /* FileItem.swift in Sources */,
+				MODEL00003 /* CompressionModels.swift in Sources */,
+				MODEL00004 /* CompressionSettings.swift in Sources */,
+				MODEL00005 /* PrinterPreset.swift in Sources */,
+				VIEW000001 /* ContentView.swift in Sources */,
+				VIEW000002 /* PreviewView.swift in Sources */,
+				VIEW000003 /* SettingsView.swift in Sources */,
+				VIEW000004 /* CropView.swift in Sources */,
+				VIEW000005 /* CompressionDialog.swift in Sources */,
+				VIEW000006 /* DropZoneView.swift in Sources */,
+				VIEW000007 /* ToolbarView.swift in Sources */,
+				VIEW000008 /* PDFInfoView.swift in Sources */,
+				VIEW000009 /* OfficeImportDialog.swift in Sources */,
+				SERV000001 /* PrintService.swift in Sources */,
+				SERV000002 /* PDFService.swift in Sources */,
+				SERV000003 /* ImageService.swift in Sources */,
+				SERV000004 /* FileParser.swift in Sources */,
+				SERV000005 /* SmartCropService.swift in Sources */,
+				SERV000006 /* OfficeConversionService.swift in Sources */,
+				SERV000007 /* BlankPageService.swift in Sources */,
+				SERV000008 /* PDFInfoService.swift in Sources */,
+				SERV000009 /* PageColorAnalyzer.swift in Sources */,
+				SERV000010 /* CloudConvertService.swift in Sources */,
+				SERV000011 /* GoogleDocsConversionService.swift in Sources */,
+				SERV000012 /* MenuBarManager.swift in Sources */,
+				SERV000013 /* NotificationManager.swift in Sources */,
+				UTIL000001 /* Utilities.swift in Sources */,
+				EXTN000001 /* PDFPage+Compression.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		DEBUGCONF1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = "DEBUG=1 ";
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_MODULE_NAME = PrintManager;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DEBUGCONF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = PrintManager;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = " @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.printmanager;
+				PRODUCT_NAME = "PrintManager";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		RELEASECON2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = PrintManager;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = " @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.printmanager;
+				PRODUCT_NAME = "PrintManager";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		RELEASECONF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_MODULE_NAME = PrintManager;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BUILDCONF1 /* Build configuration list for PBXNativeTarget "PrintManager" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DEBUGCONF2 /* Debug */,
+				RELEASECON2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BUILDCONF2 /* Build configuration list for PBXProject "PrintManager" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DEBUGCONF1 /* Debug */,
+				RELEASECONF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = MAINPROJCT /* Project object */;
+}
