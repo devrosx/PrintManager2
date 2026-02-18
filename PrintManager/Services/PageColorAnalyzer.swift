@@ -161,9 +161,11 @@ class PageColorAnalyzer {
                   let k = Double(fields[3]) else { continue }
             
             let pageNumber = index + 1  // 1-indexed
-            
-            // If any of C, M, Y are > 0, it's a color page
-            if c > 0 || m > 0 || y > 0 {
+
+            // Práh 0.01: DeviceGray objekty namapované přes inkcov mohou
+            // generovat nepatrné plovoucí CMY hodnoty (< 0.005) i u šedých stránek.
+            let colorThreshold = 0.01
+            if c > colorThreshold || m > colorThreshold || y > colorThreshold {
                 colorPages.append(pageNumber)
             } else {
                 blackWhitePages.append(pageNumber)

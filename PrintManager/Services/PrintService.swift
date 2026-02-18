@@ -2,58 +2,124 @@
 //  PrintService.swift
 //  PrintManager
 //
-//  Service for handling print operations using the LP command
+//  Service for handling print operations using native NSPrintOperation (AppKit + PDFKit).
 //
 
 import Foundation
 import AppKit
-import ImageIO
+import PDFKit
 
 class PrintService {
-    
+
     func printFile(file: FileItem, settings: PrintSettings) async throws {
-        // Build LP command
-        var command = ["/usr/bin/lp"]
-        command.append(contentsOf: settings.toLPArguments())
-        command.append(file.url.path)
-        
-        // Execute print command
-        try await executeCommand(command: command)
+        try await MainActor.run {
+            let pi = buildPrintInfo(settings: settings)
+            let op: NSPrintOperation
+
+            if file.fileType == .pdf {
+                guard let doc = PDFDocument(url: file.url) else {
+                    throw PrintError.fileNotAccessible
+                }
+                guard let pdfOp = doc.printOperation(for: pi, scalingMode: .pageScaleToFit, autoRotate: true) else {
+                    throw PrintError.commandFailed("Nelze vytvořit tiskovou operaci pro PDF")
+                }
+                op = pdfOp
+            } else if file.fileType.isImage {
+                guard let img = NSImage(contentsOf: file.url) else {
+                    throw PrintError.fileNotAccessible
+                }
+                let view = NSImageView(frame: NSRect(origin: .zero, size: pi.paperSize))
+                view.image = img
+                view.imageScaling = settings.fitToPage ? .scaleProportionallyUpOrDown : .scaleProportionallyDown
+                op = NSPrintOperation(view: view, printInfo: pi)
+            } else {
+                throw PrintError.commandFailed("Nepodporovaný formát souboru pro tisk")
+            }
+
+            op.showsPrintPanel   = false
+            op.showsProgressPanel = true
+            if !op.run() {
+                throw PrintError.commandFailed("Tisk se nezdařil")
+            }
+        }
     }
-    
+
     func printFiles(files: [FileItem], settings: PrintSettings) async throws {
         for file in files {
             try await printFile(file: file, settings: settings)
         }
     }
-    
-    private func executeCommand(command: [String]) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: command[0])
-        process.arguments = Array(command.dropFirst())
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        if process.terminationStatus != 0 {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw PrintError.commandFailed(output)
+
+    /// Sestaví ekvivalentní lp příkaz pro logování (nevykoná ho).
+    func lpCommand(file: FileItem, settings: PrintSettings) -> String {
+        let parts = ["/usr/bin/lp"] + settings.toLPArguments() + [file.url.path]
+        return parts.joined(separator: " ")
+    }
+
+    // MARK: - Helpers
+
+    private func buildPrintInfo(settings: PrintSettings) -> NSPrintInfo {
+        let pi = NSPrintInfo()
+
+        // Tiskárna
+        if !settings.printer.isEmpty, let p = NSPrinter(name: settings.printer) {
+            pi.printer = p
         }
+
+        // Papír a orientace
+        pi.paperName  = NSPrinter.PaperName(rawValue: settings.paperSize)
+        pi.orientation = settings.landscape ? .landscape : .portrait
+
+        // Zarovnání na stránku
+        if settings.fitToPage {
+            pi.horizontalPagination  = .fit
+            pi.verticalPagination    = .fit
+            pi.isHorizontallyCentered = true
+            pi.isVerticallyCentered   = true
+        }
+
+        // Kopie a oboustranný tisk přes PrintInfo slovník
+        let dict = pi.dictionary()
+        dict.setValue(settings.copies, forKey: NSPrintInfo.AttributeKey.copies.rawValue)
+        if settings.twoSided {
+            dict.setValue("two-sided-long-edge", forKey: "Duplex")
+        }
+
+        return pi
     }
 }
 
 // MARK: - Printer Status
 
-enum PrinterStatus: Equatable {
+enum PrinterStatus: Equatable, Codable {
     case idle
     case inUse
     case offline
     case error(String)
+
+    // Ruční Codable — enum má associated value
+    private enum CodingKeys: String, CodingKey { case type, message }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .idle:           try c.encode("idle",    forKey: .type)
+        case .inUse:          try c.encode("inUse",   forKey: .type)
+        case .offline:        try c.encode("offline", forKey: .type)
+        case .error(let msg): try c.encode("error",   forKey: .type)
+                              try c.encode(msg,        forKey: .message)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(String.self, forKey: .type) {
+        case "inUse":   self = .inUse
+        case "offline": self = .offline
+        case "error":   self = .error((try? c.decode(String.self, forKey: .message)) ?? "")
+        default:        self = .idle
+        }
+    }
 
     var label: String {
         switch self {
@@ -80,37 +146,83 @@ class PrintManager: ObservableObject {
     @Published var availablePrinters: [String] = []
     @Published var defaultPrinter: String?
     @Published var printerStatuses: [String: PrinterStatus] = [:]
+    @Published var printerIPs: [String: String] = [:]
+
+    // MARK: - Cache klíče
+
+    private enum CK {
+        static let printers = "pm.cache.printers"
+        static let defPrinter = "pm.cache.defaultPrinter"
+        static let statuses = "pm.cache.statuses"
+        static let ips = "pm.cache.ips"
+    }
 
     init() {
+        // 1. Okamžitě zobraz data z cache (bez čekání na lpstat)
+        loadFromCache()
+        // 2. Na pozadí obnov a přeulož cache
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            let printers = self.getPrinters()
-            let def = self.getDefaultPrinter()
-            let statuses: [String: PrinterStatus] = Dictionary(
-                uniqueKeysWithValues: printers.map { ($0, self.getPrinterStatus(for: $0)) }
-            )
-            await MainActor.run {
-                self.availablePrinters = printers
-                self.defaultPrinter = def
-                self.printerStatuses = statuses
-            }
+            await self.fetchAndApply()
         }
     }
 
     func refreshPrinters() {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            let printers = self.getPrinters()
-            let def = self.getDefaultPrinter()
-            let statuses: [String: PrinterStatus] = Dictionary(
-                uniqueKeysWithValues: printers.map { ($0, self.getPrinterStatus(for: $0)) }
-            )
-            await MainActor.run {
-                self.availablePrinters = printers
-                self.defaultPrinter = def
-                self.printerStatuses = statuses
-            }
+            await self.fetchAndApply()
         }
+    }
+
+    // MARK: - Shared fetch logic
+
+    @discardableResult
+    private func fetchAndApply() async -> Void {
+        let printers = getPrinters()
+        let def      = getDefaultPrinter()
+        let statuses: [String: PrinterStatus] = Dictionary(
+            uniqueKeysWithValues: printers.map { ($0, self.getPrinterStatus(for: $0)) }
+        )
+        let ips: [String: String] = Dictionary(
+            uniqueKeysWithValues: printers.compactMap { p -> (String, String)? in
+                guard let ip = self.extractPrinterIP(for: p) else { return nil }
+                return (p, ip)
+            }
+        )
+        await MainActor.run {
+            self.availablePrinters = printers
+            self.defaultPrinter    = def
+            self.printerStatuses   = statuses
+            self.printerIPs        = ips
+            self.saveToCache()
+        }
+    }
+
+    // MARK: - Persistence
+
+    private func loadFromCache() {
+        let ud = UserDefaults.standard
+        if let data = ud.data(forKey: CK.printers),
+           let v = try? JSONDecoder().decode([String].self, from: data) {
+            availablePrinters = v
+        }
+        defaultPrinter = ud.string(forKey: CK.defPrinter)
+        if let data = ud.data(forKey: CK.statuses),
+           let v = try? JSONDecoder().decode([String: PrinterStatus].self, from: data) {
+            printerStatuses = v
+        }
+        if let data = ud.data(forKey: CK.ips),
+           let v = try? JSONDecoder().decode([String: String].self, from: data) {
+            printerIPs = v
+        }
+    }
+
+    private func saveToCache() {
+        let ud = UserDefaults.standard
+        if let d = try? JSONEncoder().encode(availablePrinters)  { ud.set(d, forKey: CK.printers) }
+        ud.set(defaultPrinter, forKey: CK.defPrinter)
+        if let d = try? JSONEncoder().encode(printerStatuses)    { ud.set(d, forKey: CK.statuses) }
+        if let d = try? JSONEncoder().encode(printerIPs)         { ud.set(d, forKey: CK.ips) }
     }
     
     func getPrinters() -> [String] {
@@ -344,6 +456,41 @@ class PrintManager: ObservableObject {
     func openCUPSMainPage() {
         let cupsURL = URL(string: "http://localhost:631/")!
         NSWorkspace.shared.open(cupsURL)
+    }
+
+    /// Extracts IP address or hostname from printer's device URI
+    private func extractPrinterIP(for printerName: String) -> String? {
+        guard let output = getDeviceURI(for: printerName) else { return nil }
+        // lpstat -v output: "device for PrinterName: ipp://192.168.1.100/ipp/print"
+        guard let colonRange = output.range(of: ": "),
+              let rawURI = String(output[colonRange.upperBound...])
+                .components(separatedBy: "\n").first?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: rawURI),
+              let host = url.host,
+              !host.isEmpty else { return nil }
+        return host
+    }
+
+    /// Opens the print queue app from ~/Library/Printers/<name>.app
+    func openPrintQueue(for printerName: String) {
+        let printerApp = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Printers/\(printerName).app")
+        if FileManager.default.fileExists(atPath: printerApp.path) {
+            NSWorkspace.shared.open(printerApp)
+        } else {
+            // Fallback: CUPS web interface
+            let encoded = printerName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? printerName
+            if let url = URL(string: "http://localhost:631/printers/\(encoded)") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    /// Opens the printer's IP address in the default browser
+    func openPrinterIPAddress(_ host: String) {
+        guard let url = URL(string: "http://\(host)") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

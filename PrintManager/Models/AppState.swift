@@ -13,11 +13,29 @@ import Combine
 import Compression
 import UserNotifications
 
+// MARK: - ExternalApp Model
+
+struct ExternalApp: Identifiable, Codable {
+    var id: UUID
+    var name: String
+    var path: String           // absolutní cesta k .app bundle
+
+    var url: URL { URL(fileURLWithPath: path) }
+
+    var icon: NSImage? {
+        NSWorkspace.shared.icon(forFile: path)
+    }
+}
+
+
 class AppState: ObservableObject {
     // File management
     @Published var files: [FileItem] = []
     @Published var selectedFiles: Set<UUID> = []
     @Published var showingFilePicker = false
+
+    // External Apps
+    @Published var externalApps: [ExternalApp] = []
     
     // Print settings
     @Published var selectedPrinter: String = ""
@@ -38,6 +56,20 @@ class AppState: ObservableObject {
     // Crop
     @Published var showCropView = false
     @Published var cropFile: FileItem?
+
+    // MultiCrop
+    @Published var showMultiCropDialog = false
+    @Published var multiCropFile: FileItem?
+
+    // Color Page Selector
+    @Published var showColorPageSelector = false
+    @Published var colorPageSelectorFile: FileItem?
+
+    // Batch Rename
+    @Published var showBatchRename = false
+
+    // Rename
+    @Published var editingFileID: UUID? = nil
     
     // Compression
     @Published var showCompressionWindow = false
@@ -45,6 +77,41 @@ class AppState: ObservableObject {
     
     // Debug output
     @Published var debugMessages: [DebugMessage] = []
+
+    // PDF metadata cache — sdílený mezi CompactFileMetadata a FilePricePanel
+    @Published var pdfMetadataCache: [UUID: PDFMetadata] = [:]
+    private var loadingMetadataIDs: Set<UUID> = []
+
+    func loadPDFMetadataIfNeeded(for file: FileItem) {
+        guard file.fileType == .pdf,
+              pdfMetadataCache[file.id] == nil,
+              !loadingMetadataIDs.contains(file.id) else { return }
+        loadingMetadataIDs.insert(file.id)
+        let url = file.url
+        let id  = file.id
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            guard var metadata = PDFInfoService.shared.extractMetadata(from: url) else {
+                DispatchQueue.main.async { self.loadingMetadataIDs.remove(id) }
+                return
+            }
+            DispatchQueue.main.async { self.pdfMetadataCache[id] = metadata }
+            guard PageColorAnalyzer.shared.isGSAvailable else {
+                DispatchQueue.main.async { self.loadingMetadataIDs.remove(id) }
+                return
+            }
+            PageColorAnalyzer.shared.analyzePDF(at: url) { result in
+                if case .success(let colorInfo) = result {
+                    metadata.colorPageCount     = colorInfo.colorCount
+                    metadata.blackWhitePageCount = colorInfo.blackWhiteCount
+                }
+                DispatchQueue.main.async {
+                    self.pdfMetadataCache[id] = metadata
+                    self.loadingMetadataIDs.remove(id)
+                }
+            }
+        }
+    }
     
     // Notification Center
     private let notificationCenter = UNUserNotificationCenter.current()
@@ -130,6 +197,13 @@ class AppState: ObservableObject {
         }
     }
     
+    // Printer Panel (left sidebar) - collapsible
+    @Published var showPrinterPanel = true {
+        didSet {
+            UserDefaults.standard.set(showPrinterPanel, forKey: "showPrinterPanel")
+        }
+    }
+
     // Search
     @Published var searchText: String = ""
     
@@ -138,7 +212,63 @@ class AppState: ObservableObject {
     @Published var loadingMessage = ""
     
     init() {
+        self.showPrinterPanel = UserDefaults.standard.object(forKey: "showPrinterPanel") as? Bool ?? true
         self.showPreview = UserDefaults.standard.bool(forKey: "showPreview")
+        loadExternalApps()
+    }
+
+    // MARK: - External Apps
+
+    private func loadExternalApps() {
+        guard let data = UserDefaults.standard.data(forKey: "pm.externalApps"),
+              let apps = try? JSONDecoder().decode([ExternalApp].self, from: data) else { return }
+        externalApps = apps
+    }
+
+    private func saveExternalApps() {
+        guard let data = try? JSONEncoder().encode(externalApps) else { return }
+        UserDefaults.standard.set(data, forKey: "pm.externalApps")
+    }
+
+    func addExternalApp(url: URL) {
+        guard url.pathExtension.lowercased() == "app" else {
+            logWarning("Vyber soubor .app")
+            return
+        }
+        let name = url.deletingPathExtension().lastPathComponent
+        guard !externalApps.contains(where: { $0.path == url.path }) else {
+            logWarning("Aplikace \(name) je již v seznamu")
+            return
+        }
+        externalApps.append(ExternalApp(id: UUID(), name: name, path: url.path))
+        saveExternalApps()
+        logSuccess("Přidána aplikace: \(name)")
+    }
+
+    func removeExternalApp(id: UUID) {
+        guard let name = externalApps.first(where: { $0.id == id })?.name else { return }
+        externalApps.removeAll { $0.id == id }
+        saveExternalApps()
+        logInfo("Odebrána aplikace: \(name)")
+    }
+
+    func openSelectedFilesInApp(_ app: ExternalApp) {
+        let filesToOpen = files.filter { selectedFiles.contains($0.id) }
+        guard !filesToOpen.isEmpty else {
+            logWarning("Nejsou vybrány žádné soubory")
+            return
+        }
+        let urls = filesToOpen.map { $0.url }
+        NSWorkspace.shared.open(urls, withApplicationAt: app.url,
+                                configuration: .init()) { _, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.logError("Nelze otevřít v \(app.name): \(error.localizedDescription)")
+                } else {
+                    self.logSuccess("Otevřeno v \(app.name): \(urls.count) soubor(ů)")
+                }
+            }
+        }
     }
     
     // Filtered files based on search
@@ -179,51 +309,127 @@ class AppState: ObservableObject {
         }
     }
     
+    // MARK: - Directory expansion helpers
+
+    /// Rozbalí složky na jejich obsah (rekurzivně, přeskočí skryté soubory a neznámé typy).
+    private func expandURLs(_ urls: [URL]) -> [URL] {
+        var result: [URL] = []
+        for url in urls {
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDir {
+                expandDirectory(url, into: &result)
+            } else {
+                result.append(url)
+            }
+        }
+        return result
+    }
+
+    private func expandDirectory(_ dirURL: URL, into result: inout [URL]) {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: dirURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: .skipsHiddenFiles
+        ) else { return }
+        for item in contents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDir {
+                expandDirectory(item, into: &result)
+            } else if FileType.from(extension: item.pathExtension.lowercased()) != .unknown {
+                result.append(item)
+            }
+        }
+    }
+
     func addFiles(urls: [URL]) {
-        let startTime = Date()
-        logInfo("Adding \(urls.count) file(s)...")
-        
-        // Separate Office files from other files
+        let expandedURLs = expandURLs(urls)
+        let folderCount = urls.filter {
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        }.count
+        if folderCount > 0 {
+            logInfo("Přidávám \(expandedURLs.count) soubor(ů) (z \(folderCount) složky/složek)…")
+        } else {
+            logInfo("Přidávám \(expandedURLs.count) soubor(ů)…")
+        }
+
         var officeURLs: [URL] = []
         var otherURLs: [URL] = []
-        
-        for url in urls {
-            let fileExtension = url.pathExtension.lowercased()
-            let fileType = FileType.from(extension: fileExtension)
-            
-            if fileType.requiresConversion {
-                officeURLs.append(url)
-            } else {
-                otherURLs.append(url)
-            }
+
+        for url in expandedURLs {
+            let fileType = FileType.from(extension: url.pathExtension.lowercased())
+            if fileType.requiresConversion { officeURLs.append(url) }
+            else { otherURLs.append(url) }
         }
-        
-        // Process non-Office files immediately
+
+        // ── Neoffice soubory — přidej placeholder okamžitě, parsuj na pozadí ──
         for url in otherURLs {
-            if let fileItem = fileParser.parseFile(url: url) {
-                files.append(fileItem)
-                logSuccess("Added: \(fileItem.name)")
-            } else {
-                logError("Failed to parse: \(url.lastPathComponent)")
+            let fileType = FileType.from(extension: url.pathExtension.lowercased())
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+            let placeholder = FileItem(
+                url: url,
+                name: url.deletingPathExtension().lastPathComponent,
+                fileType: fileType,
+                fileSize: fileSize,
+                pageCount: 0,
+                pageSize: .zero,
+                colorInfo: "…",
+                status: .processing
+            )
+            files.append(placeholder)
+            let placeholderID = placeholder.id
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                guard let parsed = self.fileParser.parseFile(url: url) else {
+                    DispatchQueue.main.async {
+                        self.files.removeAll { $0.id == placeholderID }
+                        self.logError("Nelze načíst: \(url.lastPathComponent)")
+                    }
+                    return
+                }
+                var updated = parsed
+                updated.id = placeholderID   // zachovat UUID → selection zůstane
+                DispatchQueue.main.async {
+                    if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
+                        self.files[idx] = updated
+                        self.logSuccess("Načteno: \(updated.name)")
+                    }
+                }
             }
         }
-        
-        // If there are Office files, show import dialog
+
+        // ── Office soubory — dialog pro konverzi ──────────────────────────────
         if !officeURLs.isEmpty {
             pendingOfficeFiles = officeURLs
             showOfficeImportDialog = true
-            logInfo("\(officeURLs.count) Office file(s) require conversion to PDF")
+            logInfo("\(officeURLs.count) Office soubor(ů) vyžaduje konverzi do PDF")
         }
-        
-        let duration = Date().timeIntervalSince(startTime)
-        let totalProcessed = otherURLs.count + (officeURLs.isEmpty ? 0 : officeURLs.count)
-        logInfo("Processed \(totalProcessed) files in \(String(format: "%.2f", duration))s")
     }
     
     func removeSelectedFiles() {
         files.removeAll { selectedFiles.contains($0.id) }
         selectedFiles.removeAll()
         logInfo("Removed selected files")
+    }
+
+    func moveSelectedFilesToTrash() {
+        let filesToTrash = files.filter { selectedFiles.contains($0.id) }
+        guard !filesToTrash.isEmpty else { return }
+        let ids = Set(filesToTrash.map { $0.id })
+        var successCount = 0
+        for file in filesToTrash {
+            do {
+                try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+                successCount += 1
+            } catch {
+                logError("Nelze přesunout do koše: \(file.name) – \(error.localizedDescription)")
+            }
+        }
+        files.removeAll { ids.contains($0.id) }
+        selectedFiles.subtract(ids)
+        if successCount > 0 {
+            logInfo("Přesunuto do koše: \(successCount) soubor(ů)")
+        }
     }
     
     func removeFiles(items: Set<UUID>) {
@@ -413,6 +619,64 @@ class AppState: ObservableObject {
         showCropView = true
     }
     
+    func openMultiCrop() {
+        guard let selectedFile = getSelectedFile(), selectedFile.fileType.isImage else {
+            logWarning("Vyber jeden obrázek pro MultiCrop")
+            return
+        }
+        logInfo("Otevírám MultiCrop pro: \(selectedFile.name)")
+        multiCropFile = selectedFile
+        showMultiCropDialog = true
+    }
+
+    func openColorPageSelector() {
+        guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
+            logWarning("Vyber jeden PDF soubor pro výběr barevných stránek")
+            return
+        }
+        logInfo("Otevírám výběr barevných stránek pro: \(selectedFile.name)")
+        colorPageSelectorFile = selectedFile
+        showColorPageSelector = true
+    }
+
+    func openBatchRename() {
+        guard !selectedFiles.isEmpty else {
+            logWarning("Vyber soubory pro přejmenování")
+            return
+        }
+        showBatchRename = true
+    }
+
+    /// Nahradí soubor se stejným UUID novým FileItem (používá BatchRenameView).
+    func replaceFile(_ item: FileItem) {
+        if let idx = files.firstIndex(where: { $0.id == item.id }) {
+            files[idx] = item
+        }
+    }
+
+
+    func applySelectiveGray(file: FileItem, colorPages: Set<Int>, completion: @escaping () -> Void) {
+        let colorCount  = colorPages.count
+        let totalPages  = file.pageCount
+        let grayCount   = totalPages - colorCount
+        logInfo("Selektivní šedá: \(colorCount) barevných, \(grayCount) šedých stránek…")
+        Task {
+            do {
+                let outputURL = try await pdfService.convertSelectiveToGray(url: file.url, colorPages: colorPages)
+                await MainActor.run {
+                    logSuccess("Selektivní šedá hotova: \(outputURL.lastPathComponent)")
+                    addFiles(urls: [outputURL])
+                    completion()
+                }
+            } catch {
+                await MainActor.run {
+                    logError("Selektivní šedá selhala: \(error.localizedDescription)")
+                    completion()
+                }
+            }
+        }
+    }
+
     func smartCropFiles() {
         let selectedFiles = files.filter { self.selectedFiles.contains($0.id) }
         
@@ -548,6 +812,79 @@ class AppState: ObservableObject {
             logError("Failed to read PDF info")
         }
     }
+
+    // MARK: - PDF Actions: Convert to Gray, Flatten, Fix
+    
+    func convertToGray() {
+        guard let selectedFile = getSelectedFile(), 
+              (selectedFile.fileType == .pdf || selectedFile.fileType.isImage) else {
+            logWarning("Select a single PDF or image file to convert to gray")
+            return
+        }
+        
+        logInfo("Converting to gray: \(selectedFile.name)")
+        
+        Task {
+            do {
+                let outputURL = try await pdfService.convertToGray(url: selectedFile.url)
+                await MainActor.run {
+                    logSuccess("Converted to gray: \(outputURL.lastPathComponent)")
+                    addFiles(urls: [outputURL])
+                }
+            } catch {
+                await MainActor.run {
+                    logError("Failed to convert to gray: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    func flattenTransparency() {
+        guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
+            logWarning("Select a single PDF file to flatten transparency")
+            return
+        }
+        
+        logInfo("Flattening transparency: \(selectedFile.name)")
+        
+        Task {
+            do {
+                let outputURL = try await pdfService.flattenTransparency(url: selectedFile.url)
+                await MainActor.run {
+                    logSuccess("Flattened transparency: \(outputURL.lastPathComponent)")
+                    addFiles(urls: [outputURL])
+                }
+            } catch {
+                await MainActor.run {
+                    logError("Failed to flatten transparency: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    func fixPDF() {
+        guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
+            logWarning("Select a single PDF file to fix")
+            return
+        }
+        
+        logInfo("Fixing PDF: \(selectedFile.name)")
+        
+        Task {
+            do {
+                let outputURL = try await pdfService.fixPDF(url: selectedFile.url)
+                await MainActor.run {
+                    logSuccess("Fixed PDF: \(outputURL.lastPathComponent)")
+                    addFiles(urls: [outputURL])
+                }
+            } catch {
+                await MainActor.run {
+                    logError("Failed to fix PDF: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     
     // MARK: - Image Operations
     
@@ -616,6 +953,68 @@ class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    // Rotate selected files (images and PDFs) 90° clockwise
+    // Overwrites the original file in-place and preserves UUID/selection
+    func rotateSelectedFiles(degrees: Double = 90) {
+        let selectedFilesList = files.filter { selectedFiles.contains($0.id) }
+
+        guard !selectedFilesList.isEmpty else {
+            logWarning("Select files to rotate")
+            return
+        }
+
+        let dir = degrees == 90 ? "CW" : "CCW"
+        logInfo("Rotating \(selectedFilesList.count) file(s) \(dir)...")
+
+        Task {
+            for file in selectedFilesList {
+                do {
+                    let originalURL = file.url
+                    let originalID = file.id
+
+                    if file.fileType.isImage {
+                        // Rotate to temp file, then atomically replace original
+                        let tempURL = try await imageService.rotateImage(url: originalURL, degrees: degrees)
+                        try FileManager.default.replaceItem(
+                            at: originalURL, withItemAt: tempURL,
+                            backupItemName: nil, options: [], resultingItemURL: nil
+                        )
+                    } else if file.fileType == .pdf {
+                        let tempURL = try await pdfService.rotatePDF(url: originalURL, degrees: degrees)
+                        try FileManager.default.replaceItem(
+                            at: originalURL, withItemAt: tempURL,
+                            backupItemName: nil, options: [], resultingItemURL: nil
+                        )
+                    } else {
+                        continue
+                    }
+
+                    // Re-parse the file at the same URL, then restore original ID
+                    await MainActor.run {
+                        if let index = files.firstIndex(where: { $0.id == originalID }),
+                           var refreshed = fileParser.parseFile(url: originalURL) {
+                            // Preserve the original UUID so selection stays intact
+                            refreshed.id = originalID
+                            // Inkrementovat verzi obsahu — views (preview, metadata)
+                            // ji sledují a překreslí se i když UUID zůstane stejné
+                            refreshed.contentVersion = files[index].contentVersion + 1
+                            files[index] = refreshed
+                        }
+                        logSuccess("Rotated \(dir): \(file.name)")
+                    }
+                } catch {
+                    await MainActor.run {
+                        logError("Failed to rotate \(file.name): \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
+    func rotateSelectedFilesLeft() {
+        rotateSelectedFiles(degrees: 270.0)
     }
     
     func invertImage() {
@@ -911,9 +1310,36 @@ class AppState: ObservableObject {
             selectedPreset = nil
             return
         }
-        availableSystemPresets = SystemPresetService().loadPresets(for: selectedPrinter)
-        // Pokud aktuálně vybraný preset neexistuje pro novou tiskárnu, resetuj
-        if let current = selectedPreset, !availableSystemPresets.contains(where: { $0.name == current }) {
+
+        let printer   = selectedPrinter
+        let cacheKey  = "pm.cache.presets.\(printer)"
+
+        // 1. Okamžitě zobraz z cache (bez I/O blokování UI)
+        if let data   = UserDefaults.standard.data(forKey: cacheKey),
+           let cached = try? JSONDecoder().decode([SystemPrinterPreset].self, from: data) {
+            availableSystemPresets = cached
+            validateSelectedPreset()
+        }
+
+        // 2. Na pozadí načti čerstvá data ze systémového plistu a přeulož cache
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let fresh = SystemPresetService().loadPresets(for: printer)
+            if let data = try? JSONEncoder().encode(fresh) {
+                UserDefaults.standard.set(data, forKey: cacheKey)
+            }
+            DispatchQueue.main.async {
+                // Aktualizuj jen pokud se stále díváme na stejnou tiskárnu
+                guard self.selectedPrinter == printer else { return }
+                self.availableSystemPresets = fresh
+                self.validateSelectedPreset()
+            }
+        }
+    }
+
+    private func validateSelectedPreset() {
+        if let current = selectedPreset,
+           !availableSystemPresets.contains(where: { $0.name == current }) {
             selectedPreset = nil
         }
     }

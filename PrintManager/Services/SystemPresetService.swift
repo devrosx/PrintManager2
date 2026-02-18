@@ -10,11 +10,19 @@ import Foundation
 
 // MARK: - Model
 
-struct SystemPrinterPreset: Identifiable, Hashable {
+struct SystemPrinterPreset: Identifiable, Hashable, Codable {
     let id: String   // == name
     let name: String
     /// Hotové argumenty pro příkaz `lp`, např. ["-n","2","-o","sides=two-sided-long-edge","-o","ColorModel=Gray"]
     let lpOptions: [String]
+}
+
+// MARK: - Load Result
+
+struct SystemPresetLoadResult {
+    let presets: [SystemPrinterPreset]
+    let searchedPaths: [String]
+    let foundPath: String?
 }
 
 // MARK: - Service
@@ -22,24 +30,45 @@ struct SystemPrinterPreset: Identifiable, Hashable {
 class SystemPresetService {
 
     func loadPresets(for printerName: String) -> [SystemPrinterPreset] {
+        return loadPresetsWithInfo(for: printerName).presets
+    }
+
+    func loadPresetsWithInfo(for printerName: String) -> SystemPresetLoadResult {
         let candidates = presetFilePaths(for: printerName)
+        let paths = candidates.map { $0.path }
         for url in candidates {
             if let presets = parseFile(at: url), !presets.isEmpty {
-                return presets
+                return SystemPresetLoadResult(presets: presets, searchedPaths: paths, foundPath: url.path)
             }
         }
-        return []
+        return SystemPresetLoadResult(presets: [], searchedPaths: paths, foundPath: nil)
     }
 
     // MARK: - Private
 
+    /// Sestaví seznam kandidátních cest pro daný název tiskárny.
+    /// macOS používá název tiskárny přímo (se zachováním mezer),
+    /// ale někdy se vyskytuje i verze s podtržítky místo mezer.
     private func presetFilePaths(for printerName: String) -> [URL] {
-        let filename = "com.apple.print.custompresets.forprinter.\(printerName).plist"
-        let userPrefs  = FileManager.default.homeDirectoryForCurrentUser
+        let userPrefsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Preferences")
-            .appendingPathComponent(filename)
-        let sysPrefs   = URL(fileURLWithPath: "/Library/Preferences/\(filename)")
-        return [userPrefs, sysPrefs]
+        let sysPrefsDir = URL(fileURLWithPath: "/Library/Preferences")
+
+        var names: [String] = [printerName]
+        // Alternativa: mezery nahrazeny podtržítkem
+        let underscore = printerName.replacingOccurrences(of: " ", with: "_")
+        if underscore != printerName { names.append(underscore) }
+        // Alternativa: mezery nahrazeny pomlčkou
+        let dash = printerName.replacingOccurrences(of: " ", with: "-")
+        if dash != printerName && dash != underscore { names.append(dash) }
+
+        var urls: [URL] = []
+        for name in names {
+            let filename = "com.apple.print.custompresets.forprinter.\(name).plist"
+            urls.append(userPrefsDir.appendingPathComponent(filename))
+            urls.append(sysPrefsDir.appendingPathComponent(filename))
+        }
+        return urls
     }
 
     private func parseFile(at url: URL) -> [SystemPrinterPreset]? {

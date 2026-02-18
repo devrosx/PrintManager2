@@ -11,7 +11,6 @@ import AppKit
 struct ModernToolbar: ToolbarContent {
     @EnvironmentObject var appState: AppState
     @Binding var searchText: String
-    @Binding var showingToolbarSearch: Bool
     
     var body: some ToolbarContent {
         // Add Files
@@ -78,6 +77,10 @@ struct ModernToolbar: ToolbarContent {
                 Button("Add Blank Page to Odd") { appState.addBlankPagesToOddDocuments() }
                 Divider()
                 Button("PDF Info") { appState.showPDFInfo() }
+                Divider()
+                Button("Convert to Gray") { appState.convertToGray() }
+                Button("Flatten Transparency") { appState.flattenTransparency() }
+                Button("Fix PDF") { appState.fixPDF() }
             } label: {
                 Label("PDF", systemImage: "doc.fill")
             }
@@ -119,7 +122,7 @@ struct ModernToolbar: ToolbarContent {
             }) {
                 Label(
                     appState.showPreview ? "Hide Preview" : "Show Preview",
-                    systemImage: appState.showPreview ? "sidebar.trailing" : "sidebar.trailing"
+                    systemImage: appState.showPreview ? "sidebar.right" : "sidebar.right.on.rectangle"
                 )
             }
             .help("Toggle preview panel (⌘I)")

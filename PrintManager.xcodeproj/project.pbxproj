@@ -27,6 +27,8 @@
 		SERV000011 /* GoogleDocsConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE11 /* GoogleDocsConversionService.swift */; };
 		SERV000012 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE12 /* MenuBarManager.swift */; };
 		SERV000013 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE13 /* NotificationManager.swift */; };
+		SERV000014 /* SystemPresetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE14 /* SystemPresetService.swift */; };
+		SERV000015 /* MultiCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE15 /* MultiCropService.swift */; };
 		UTIL000001 /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = UTILFILE01 /* Utilities.swift */; };
 		VIEW000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE01 /* ContentView.swift */; };
 		VIEW000002 /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE02 /* PreviewView.swift */; };
@@ -37,6 +39,9 @@
 		VIEW000007 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE07 /* ToolbarView.swift */; };
 		VIEW000008 /* PDFInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE08 /* PDFInfoView.swift */; };
 		VIEW000009 /* OfficeImportDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE09 /* OfficeImportDialog.swift */; };
+		VIEW000010 /* MultiCropDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE10 /* MultiCropDialog.swift */; };
+		VIEW000011 /* ColorPageSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE11 /* ColorPageSelectorView.swift */; };
+		VIEW000012 /* BatchRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE12 /* BatchRenameView.swift */; };
 		EXTN000001 /* PDFPage+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXTNFILE01 /* PDFPage+Compression.swift */; };
 /* End PBXBuildFile section */
 
@@ -62,6 +67,8 @@
 		SERVFILE11 /* GoogleDocsConversionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDocsConversionService.swift; sourceTree = "<group>"; };
 		SERVFILE12 /* MenuBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarManager.swift; sourceTree = "<group>"; };
 		SERVFILE13 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		SERVFILE14 /* SystemPresetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPresetService.swift; sourceTree = "<group>"; };
+		SERVFILE15 /* MultiCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiCropService.swift; sourceTree = "<group>"; };
 		UTILFILE01 /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
 		VIEWFILE01 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		VIEWFILE02 /* PreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewView.swift; sourceTree = "<group>"; };
@@ -72,6 +79,9 @@
 		VIEWFILE07 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
 		VIEWFILE08 /* PDFInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFInfoView.swift; sourceTree = "<group>"; };
 		VIEWFILE09 /* OfficeImportDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeImportDialog.swift; sourceTree = "<group>"; };
+		VIEWFILE10 /* MultiCropDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiCropDialog.swift; sourceTree = "<group>"; };
+		VIEWFILE11 /* ColorPageSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorPageSelectorView.swift; sourceTree = "<group>"; };
+		VIEWFILE12 /* BatchRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameView.swift; sourceTree = "<group>"; };
 		EXTNFILE01 /* PDFPage+Compression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PDFPage+Compression.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -144,6 +154,8 @@
 				SERVFILE11 /* GoogleDocsConversionService.swift */,
 				SERVFILE12 /* MenuBarManager.swift */,
 				SERVFILE13 /* NotificationManager.swift */,
+				SERVFILE14 /* SystemPresetService.swift */,
+				SERVFILE15 /* MultiCropService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -176,6 +188,9 @@
 				VIEWFILE07 /* ToolbarView.swift */,
 				VIEWFILE08 /* PDFInfoView.swift */,
 				VIEWFILE09 /* OfficeImportDialog.swift */,
+				VIEWFILE10 /* MultiCropDialog.swift */,
+				VIEWFILE11 /* ColorPageSelectorView.swift */,
+				VIEWFILE12 /* BatchRenameView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -259,6 +274,9 @@
 				VIEW000007 /* ToolbarView.swift in Sources */,
 				VIEW000008 /* PDFInfoView.swift in Sources */,
 				VIEW000009 /* OfficeImportDialog.swift in Sources */,
+				VIEW000010 /* MultiCropDialog.swift in Sources */,
+				VIEW000011 /* ColorPageSelectorView.swift in Sources */,
+				VIEW000012 /* BatchRenameView.swift in Sources */,
 				SERV000001 /* PrintService.swift in Sources */,
 				SERV000002 /* PDFService.swift in Sources */,
 				SERV000003 /* ImageService.swift in Sources */,
@@ -272,6 +290,8 @@
 				SERV000011 /* GoogleDocsConversionService.swift in Sources */,
 				SERV000012 /* MenuBarManager.swift in Sources */,
 				SERV000013 /* NotificationManager.swift in Sources */,
+				SERV000014 /* SystemPresetService.swift in Sources */,
+				SERV000015 /* MultiCropService.swift in Sources */,
 				UTIL000001 /* Utilities.swift in Sources */,
 				EXTN000001 /* PDFPage+Compression.swift in Sources */,
 			);
@@ -351,10 +371,8 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = PrintManager;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PrintManager/Resources/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = " @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
@@ -379,10 +397,8 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = PrintManager;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "PrintManager/Resources/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = " @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;

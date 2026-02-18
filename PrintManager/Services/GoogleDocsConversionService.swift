@@ -124,14 +124,21 @@ class GoogleOAuthManager: ObservableObject {
     @Published var isAuthenticating = false
     @Published var authError: String?
 
-    private let clientId = ""
-    private let scope    = "https://www.googleapis.com/auth/drive.file"
+    private let scope = "https://www.googleapis.com/auth/drive.file"
 
-    /// Client secret pro Desktop app OAuth klienta (není skutečným tajemstvím — je v binárce).
-    /// Lze přepsat přes Nastavení → Google → Client Secret.
+    /// Client ID — nastavuje se v Nastavení → Google.
+    var clientId: String {
+        UserDefaults.standard.string(forKey: "googleClientId") ?? ""
+    }
+
+    /// Client Secret — nastavuje se v Nastavení → Google.
     var clientSecret: String {
-        let stored = UserDefaults.standard.string(forKey: "googleClientSecret") ?? ""
-        return stored.isEmpty ? "" : stored
+        UserDefaults.standard.string(forKey: "googleClientSecret") ?? ""
+    }
+
+    /// Vrátí true pokud jsou OAuth přihlašovací údaje nakonfigurovány.
+    var hasCredentials: Bool {
+        !clientId.isEmpty && !clientSecret.isEmpty
     }
 
     private var accessToken:       String?
@@ -166,6 +173,10 @@ class GoogleOAuthManager: ObservableObject {
     /// Přihlášení proběhne automaticky — uživatel nemusí nic kopírovat.
     func startLogin() {
         guard !isAuthenticating else { return }
+        guard hasCredentials else {
+            authError = "Nastavte Client ID a Client Secret v Nastavení → Google."
+            return
+        }
         isAuthenticating = true
         startLocalServer { [weak self] code in
             Task { @MainActor [weak self] in

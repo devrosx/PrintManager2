@@ -12,18 +12,38 @@ import ImageIO
 
 // MARK: - Main Content View
 
+// MARK: - Window Level Helper
+
+/// NSViewRepresentable, který drží okno nad ostatními při alwaysOnTop = true.
+private struct WindowLevelSetter: NSViewRepresentable {
+    let floating: Bool
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window, !window.isSheet else { return }
+            window.level = floating ? .floating : .normal
+        }
+    }
+}
+
+// MARK: - Main Content View
+
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var printManager = PrintManager()
     @State private var keyMonitor: Any?
+    @AppStorage("alwaysOnTop") private var alwaysOnTop = false
 
     var body: some View {
         HStack(spacing: 0) {
-            // Left: Printers list
-            PrinterListPanel(printManager: printManager)
-                .frame(width: 165)
+            // Left: Printers list (collapsible)
+            if appState.showPrinterPanel {
+                PrinterListPanel(printManager: printManager)
+                    .frame(width: 165)
+                    .transition(.move(edge: .leading))
 
-            Divider()
+                Divider()
+            }
 
             // Middle: Table + Log + Actions
             VStack(spacing: 0) {
@@ -79,6 +99,22 @@ struct ContentView: View {
             OfficeImportDialog(isPresented: $appState.showOfficeImportDialog)
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showMultiCropDialog) {
+            if let file = appState.multiCropFile {
+                MultiCropDialog(isPresented: $appState.showMultiCropDialog, file: file)
+                    .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $appState.showColorPageSelector) {
+            if let file = appState.colorPageSelectorFile {
+                ColorPageSelectorView(isPresented: $appState.showColorPageSelector, file: file)
+                    .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $appState.showBatchRename) {
+            BatchRenameView(isPresented: $appState.showBatchRename)
+                .environmentObject(appState)
+        }
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 // Cmd+I to toggle preview
@@ -90,6 +126,31 @@ struct ContentView: View {
                     }
                     return nil
                 }
+                // Cmd+Shift+P to toggle printer panel
+                if event.modifierFlags.contains(.command) && event.modifierFlags.contains(.shift) && event.keyCode == 35 { // 35 = P key
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            appState.showPrinterPanel.toggle()
+                        }
+                    }
+                    return nil
+                }
+                // Backspace / Cmd+Backspace — jen pokud není fokus v textovém poli
+                if event.keyCode == 51 {
+                    let responder = NSApp.keyWindow?.firstResponder
+                    let inTextField = responder is NSTextView || responder is NSTextField
+                    if !inTextField && !appState.selectedFiles.isEmpty {
+                        let hasCommand = event.modifierFlags.contains(.command)
+                        DispatchQueue.main.async {
+                            if hasCommand {
+                                appState.moveSelectedFilesToTrash() // Cmd+Backspace → koš
+                            } else {
+                                appState.removeSelectedFiles()       // Backspace → odstranit z listu
+                            }
+                        }
+                        return nil
+                    }
+                }
                 return event
             }
         }
@@ -98,6 +159,15 @@ struct ContentView: View {
                 NSEvent.removeMonitor(monitor)
                 keyMonitor = nil
             }
+        }
+        // Always on Top — sleduje AppStorage a nastavuje window.level
+        .background(WindowLevelSetter(floating: alwaysOnTop))
+        // Auto-výběr default tiskárny při prvním načtení
+        .onChange(of: printManager.availablePrinters) { printers in
+            guard appState.selectedPrinter.isEmpty, !printers.isEmpty else { return }
+            let def = printManager.defaultPrinter ?? printers[0]
+            appState.selectedPrinter = def
+            appState.loadSystemPresets()
         }
     }
 }
@@ -108,6 +178,7 @@ struct PrinterListPanel: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var printManager: PrintManager
     @State private var printerIcons: [String: NSImage] = [:]
+    @State private var selectedAppID: UUID? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -146,12 +217,19 @@ struct PrinterListPanel: View {
                                 icon: printerIcons[printer],
                                 status: printManager.printerStatuses[printer] ?? .idle,
                                 isDefault: printManager.defaultPrinter == printer,
+                                ip: printManager.printerIPs[printer],
                                 onSelect: {
                                     appState.selectedPrinter = printer
                                     appState.loadSystemPresets()
                                 },
                                 onOpenCUPS: { printManager.openCUPSPage(for: printer) },
-                                onOpenCUPSMain: { printManager.openCUPSMainPage() }
+                                onOpenCUPSMain: { printManager.openCUPSMainPage() },
+                                onOpenQueue: { printManager.openPrintQueue(for: printer) },
+                                onOpenIP: {
+                                    if let host = printManager.printerIPs[printer] {
+                                        printManager.openPrinterIPAddress(host)
+                                    }
+                                }
                             )
                             .onAppear {
                                 guard printerIcons[printer] == nil else { return }
@@ -211,6 +289,77 @@ struct PrinterListPanel: View {
                 .padding(.bottom, 8)
                 .background(Color(NSColor.controlBackgroundColor))
             }
+
+            // ── Apps sekce ───────────────────────────────────────────────────
+            Divider()
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Záhlaví Apps
+                HStack(spacing: 4) {
+                    Text("Apps")
+                        .font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                    // "+" přidat aplikaci
+                    Button {
+                        pickApp()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Přidat aplikaci")
+
+                    // "−" odebrat vybranou aplikaci
+                    Button {
+                        if let id = selectedAppID {
+                            appState.removeExternalApp(id: id)
+                            selectedAppID = nil
+                        }
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Odebrat vybranou aplikaci")
+                    .disabled(selectedAppID == nil)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+
+                Divider()
+
+                if appState.externalApps.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "app.badge.plus")
+                            .font(.system(size: 22))
+                            .foregroundColor(.secondary.opacity(0.45))
+                        Text("Přidej aplikaci\nklikem na +")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(appState.externalApps) { app in
+                                AppRowView(
+                                    app: app,
+                                    isSelected: selectedAppID == app.id,
+                                    onSelect: {
+                                        selectedAppID = (selectedAppID == app.id) ? nil : app.id
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                    }
+                    .frame(maxHeight: 170)
+                }
+            }
+            .background(Color(NSColor.controlBackgroundColor))
         }
         .onAppear {
             if !appState.selectedPrinter.isEmpty {
@@ -218,9 +367,31 @@ struct PrinterListPanel: View {
             }
         }
     }
+
+    // Otevře NSOpenPanel pro výběr .app souboru
+    private func pickApp() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Přidat"
+        if panel.runModal() == .OK {
+            for url in panel.urls {
+                appState.addExternalApp(url: url)
+            }
+        }
+    }
 }
 
-// MARK: - Printer Row View (below)
+// MARK: - Save Preset View
+
+struct SavePresetView: View {
+    @EnvironmentObject var appState: AppState
+    @ObservedObject var presetStore: PrinterPresetStore
+    let printerName: String
+    @Binding var isPresented: Bool
     
     @State private var presetName = ""
     @State private var copies: Int = 1
@@ -322,9 +493,12 @@ struct PrinterRowView: View {
     let icon: NSImage?
     let status: PrinterStatus
     let isDefault: Bool
+    let ip: String?
     let onSelect: () -> Void
     let onOpenCUPS: () -> Void
     let onOpenCUPSMain: () -> Void
+    let onOpenQueue: () -> Void
+    let onOpenIP: () -> Void
 
     private var statusLabel: String {
         isDefault ? "\(status.label), Default" : status.label
@@ -372,8 +546,22 @@ struct PrinterRowView: View {
         .background(isSelected ? Color.accentColor : Color.clear)
         .cornerRadius(6)
         .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
+        .onTapGesture(count: 2) { onOpenQueue() }
+        .onTapGesture(count: 1) { onSelect() }
         .contextMenu {
+            Button {
+                onOpenQueue()
+            } label: {
+                Label("Otevřít tiskovou frontu", systemImage: "tray.full")
+            }
+            if let host = ip {
+                Button {
+                    onOpenIP()
+                } label: {
+                    Label("Otevřít IP adresu (\(host))", systemImage: "network")
+                }
+            }
+            Divider()
             Button {
                 onOpenCUPS()
             } label: {
@@ -384,6 +572,101 @@ struct PrinterRowView: View {
                 onOpenCUPSMain()
             } label: {
                 Label("Open CUPS Interface", systemImage: "globe")
+            }
+        }
+    }
+}
+
+// MARK: - App Row View
+
+struct AppRowView: View {
+    let app: ExternalApp
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    @EnvironmentObject var appState: AppState
+    @State private var icon: NSImage? = nil
+    @State private var isDropTargeted = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if let icon = icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(NSColor.controlColor))
+                        .frame(width: 28, height: 28)
+                }
+            }
+
+            Text(app.name)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundColor(isSelected ? .white : .primary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected
+                      ? Color.accentColor
+                      : (isDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 1.5)
+        )
+        .contentShape(Rectangle())
+        // Jeden klik = výběr, dvojklik = otevřít vybrané soubory
+        .onTapGesture(count: 2) { appState.openSelectedFilesInApp(app) }
+        .onTapGesture(count: 1) { onSelect() }
+        // Drop zóna — přetáhni soubory z Finderu nebo jiné aplikace
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            let group = DispatchGroup()
+            var dropped: [URL] = []
+            let q = DispatchQueue(label: "pm.approw.drop")
+            for provider in providers {
+                group.enter()
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    defer { group.leave() }
+                    if let data = item as? Data,
+                       let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        q.sync { dropped.append(url) }
+                    }
+                }
+            }
+            group.notify(queue: .main) {
+                guard !dropped.isEmpty else { return }
+                NSWorkspace.shared.open(dropped, withApplicationAt: app.url,
+                                        configuration: .init()) { _, err in
+                    DispatchQueue.main.async {
+                        if let err = err {
+                            appState.logError("\(app.name): \(err.localizedDescription)")
+                        } else {
+                            appState.logSuccess("Otevřeno v \(app.name): \(dropped.count) soubor(ů)")
+                        }
+                    }
+                }
+            }
+            return true
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                appState.removeExternalApp(id: app.id)
+            } label: {
+                Label("Odebrat ze seznamu", systemImage: "trash")
+            }
+        }
+        .onAppear {
+            guard icon == nil else { return }
+            DispatchQueue.global(qos: .utility).async {
+                let img = NSWorkspace.shared.icon(forFile: app.path)
+                DispatchQueue.main.async { icon = img }
             }
         }
     }
@@ -477,6 +760,7 @@ struct PrinterSettingsBar: View {
 struct DropFileTableView: View {
     @EnvironmentObject var appState: AppState
     @State private var isDropTargeted = false
+    @AppStorage("tableRowFontSize") private var tableRowFontSize: Double = 12
 
     var body: some View {
         Group {
@@ -520,6 +804,7 @@ struct DropFileTableView: View {
                     }
                     .width(80)
                 }
+                .environment(\.font, .system(size: CGFloat(tableRowFontSize)))
                 .contextMenu(forSelectionType: UUID.self) { items in
                     if !items.isEmpty {
                         Button(action: { appState.revealInFinder(items: items) }) {
@@ -528,44 +813,84 @@ struct DropFileTableView: View {
                         Button(action: { appState.openInDefaultApp(items: items) }) {
                             Label("Open", systemImage: "arrow.up.forward.app")
                         }
-                        Divider()
-                        Button(action: { appState.mergePDFs() }) {
-                            Label("Combine PDF", systemImage: "doc.on.doc")
-                        }
-                        Button(action: { appState.splitPDF() }) {
-                            Label("Split PDF", systemImage: "doc.on.doc.fill")
-                        }
-                        Divider()
-                        Button(action: { appState.compressPDF() }) {
-                            Label("Compress PDF", systemImage: "arrow.down.circle")
-                        }
-                        Button(action: { appState.rasterizePDF() }) {
-                            Label("Rasterize PDF", systemImage: "rectangle.dashed")
-                        }
-                        Divider()
-                        Button(action: { appState.cropPDF() }) {
-                            Label("Crop PDF/Image", systemImage: "crop")
-                        }
-                        Button(action: { appState.smartCropFiles() }) {
-                            Label("Smart Crop", systemImage: "sparkles")
-                        }
-                        Divider()
-                        // Get selected files to determine types
-                        let selectedFiles = appState.files.filter { items.contains($0.id) }
-                        let hasPDF = selectedFiles.contains { $0.fileType == .pdf }
-                        
-                        if hasPDF {
-                            Button(action: { appState.showPDFInfo() }) {
-                                Label("PDF Info", systemImage: "info.circle")
+                        if items.count == 1 {
+                            Button(action: { appState.editingFileID = items.first }) {
+                                Label("Rename", systemImage: "pencil")
                             }
                         }
                         Divider()
-                        Button(role: .destructive, action: { appState.removeFiles(items: items) }) {
+
+                        // Determine selected file types
+                        let selectedFiles = appState.files.filter { items.contains($0.id) }
+                        let hasImage = selectedFiles.contains { $0.fileType.isImage }
+                        let hasPDF = selectedFiles.contains { $0.fileType == .pdf }
+
+                        if hasImage && !hasPDF {
+                            // Image Actions
+                            Button(action: { appState.convertImageToPDF() }) {
+                                Label("Convert to PDF", systemImage: "doc.badge.plus")
+                            }
+                            Button(action: { appState.cropPDF() }) {
+                                Label("Crop Image", systemImage: "crop")
+                            }
+                            Button(action: { appState.smartCropFiles() }) {
+                                Label("Smart Crop", systemImage: "sparkles")
+                            }
+                            Button(action: { appState.openMultiCrop() }) {
+                                Label("MultiCrop", systemImage: "photo.stack")
+                            }
+                            Divider()
+                            Button(action: { appState.invertImage() }) {
+                                Label("Invert Colors", systemImage: "circle.lefthalf.filled")
+                            }
+                            Button(action: { appState.convertToGray() }) {
+                                Label("Convert to Gray", systemImage: "circle.fill")
+                            }
+                        } else {
+                            // PDF Actions
+                            Button(action: { appState.mergePDFs() }) {
+                                Label("Combine PDF", systemImage: "doc.on.doc")
+                            }
+                            Button(action: { appState.splitPDF() }) {
+                                Label("Split PDF", systemImage: "doc.on.doc.fill")
+                            }
+                            Divider()
+                            Button(action: { appState.compressPDF() }) {
+                                Label("Compress PDF", systemImage: "arrow.down.circle")
+                            }
+                            Button(action: { appState.rasterizePDF() }) {
+                                Label("Rasterize PDF", systemImage: "rectangle.dashed")
+                            }
+                            Divider()
+                            Button(action: { appState.cropPDF() }) {
+                                Label("Crop PDF/Image", systemImage: "crop")
+                            }
+                            Button(action: { appState.smartCropFiles() }) {
+                                Label("Smart Crop", systemImage: "sparkles")
+                            }
+                            if hasPDF {
+                                Divider()
+                                Button(action: { appState.showPDFInfo() }) {
+                                    Label("PDF Info", systemImage: "info.circle")
+                                }
+                            }
+                        }
+
+                        Divider()
+                        Button(role: .destructive, action: {
+                            // Odložení na další runloop — SwiftUI Table crashuje,
+                            // pokud datový zdroj mutujeme přímo ve chvíli,
+                            // kdy context menu teprve zavírá svou animaci.
+                            DispatchQueue.main.async {
+                                appState.removeFiles(items: items)
+                            }
+                        }) {
                             Label("Delete", systemImage: "trash")
                         }
                     }
                 } primaryAction: { items in
-                    // Double-click action could be handled here
+                    // Dvojklik = otevřít v defaultní aplikaci
+                    appState.openInDefaultApp(items: items)
                 }
             } else {
                 VStack(spacing: 10) {
@@ -587,29 +912,27 @@ struct DropFileTableView: View {
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            let group = DispatchGroup()
             var droppedURLs: [URL] = []
-            
+            let serialQ = DispatchQueue(label: "pm.drop.urls")
+
             for provider in providers {
+                group.enter()
                 provider.loadItem(
                     forTypeIdentifier: UTType.fileURL.identifier,
                     options: nil
                 ) { item, _ in
+                    defer { group.leave() }
                     if let data = item as? Data,
                        let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        droppedURLs.append(url)
+                        serialQ.sync { droppedURLs.append(url) }
                     }
                 }
             }
-            
-            // Give time for async loading
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                if !droppedURLs.isEmpty {
-                    appState.addFiles(urls: droppedURLs)
-                    
-                    // Select the newly added file(s)
-                    let newFiles = appState.files.suffix(droppedURLs.count)
-                    appState.selectedFiles = Set(newFiles.map { $0.id })
-                }
+
+            group.notify(queue: .main) {
+                guard !droppedURLs.isEmpty else { return }
+                appState.addFiles(urls: droppedURLs)
             }
             return true
         }
@@ -629,6 +952,7 @@ struct InlineLogView: View {
                         Text(message.message)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(logColor(for: message.level))
+                            .textSelection(.enabled)
                             .id(message.id)
                     }
                 }
@@ -663,22 +987,25 @@ struct BottomActionBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Add files
-            Button(action: { appState.showingFilePicker = true }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .buttonStyle(.bordered)
-            .help("Add files")
-
-            // Remove selected
-            Button(action: { appState.removeSelectedFiles() }) {
-                Image(systemName: "minus")
+            // Rotate Left (90° CCW) — Cmd+Shift+R
+            Button(action: { appState.rotateSelectedFilesLeft() }) {
+                Image(systemName: "rotate.left")
                     .font(.system(size: 12, weight: .medium))
             }
             .buttonStyle(.bordered)
             .disabled(appState.selectedFiles.isEmpty)
-            .help("Remove selected")
+            .help("Rotate 90° counter-clockwise (⌘⇧R)")
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+
+            // Rotate Right (90° CW) — Cmd+R
+            Button(action: { appState.rotateSelectedFiles() }) {
+                Image(systemName: "rotate.right")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.selectedFiles.isEmpty)
+            .help("Rotate 90° clockwise (⌘R)")
+            .keyboardShortcut("r", modifiers: .command)
 
             // PDF Actions menu
             Menu {
@@ -690,6 +1017,8 @@ struct BottomActionBar: View {
                 Divider()
                 Button("Crop PDF/Image") { appState.cropPDF() }
                 Button("Smart Crop") { appState.smartCropFiles() }
+                Divider()
+                Button("Choose Color Pages") { appState.openColorPageSelector() }
                 Divider()
                 Button("Add Blank Page to Odd") { appState.addBlankPagesToOddDocuments() }
                 Divider()
@@ -704,6 +1033,25 @@ struct BottomActionBar: View {
             }
             .frame(width: 130)
 
+            // Image Actions menu
+            Menu {
+                Button("Convert to PDF") { appState.convertImageToPDF() }
+                Button("Crop Image") { appState.cropPDF() }
+                Button("Smart Crop") { appState.smartCropFiles() }
+                Button("MultiCrop") { appState.openMultiCrop() }
+                Divider()
+                Button("Invert Colors") { appState.invertImage() }
+                Button("Convert to Gray") { appState.convertToGray() }
+            } label: {
+                HStack(spacing: 3) {
+                    Text("Image Actions")
+                        .font(.system(size: 12))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+            }
+            .frame(width: 140)
+
             // Print button
             Button("Print selected") {
                 appState.printSelectedFiles()
@@ -712,19 +1060,7 @@ struct BottomActionBar: View {
             .disabled(appState.selectedFiles.isEmpty)
 
             Spacer()
-
-            // Summary
-            Text(selectionSummary)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
         }
-    }
-
-    private var selectionSummary: String {
-        let selected = appState.files.filter { appState.selectedFiles.contains($0.id) }
-        if selected.isEmpty { return "No files selected" }
-        let pages = selected.reduce(0) { $0 + $1.pageCount }
-        return "\(pages) PDF pages selected"
     }
 }
 
@@ -765,59 +1101,7 @@ struct CompactPreviewPanel: View {
 
             Divider()
 
-            if let file = selectedFile {
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            PreviewImageView(file: file, currentPage: $currentPage)
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 8)
-                                .padding(.top, 8)
-
-                            // File name
-                            Text(file.name + "." + file.fileType.rawValue.lowercased())
-                                .font(.system(size: 11, weight: .semibold))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 6)
-
-                            // Page navigation
-                            if file.pageCount > 1 {
-                                HStack(spacing: 12) {
-                                    Button(action: {
-                                        if currentPage > 0 { currentPage -= 1 }
-                                    }) {
-                                        Image(systemName: "arrow.left.circle")
-                                            .font(.title3)
-                                    }
-                                    .disabled(currentPage == 0)
-                                    .buttonStyle(.borderless)
-
-                                    Text("\(currentPage + 1)")
-                                        .font(.system(size: 12))
-
-                                    Button(action: {
-                                        if currentPage < file.pageCount - 1 { currentPage += 1 }
-                                    }) {
-                                        Image(systemName: "arrow.right.circle")
-                                            .font(.title3)
-                                    }
-                                    .disabled(currentPage >= file.pageCount - 1)
-                                    .buttonStyle(.borderless)
-                                }
-                            }
-
-                            Divider()
-                                .padding(.horizontal, 8)
-
-                            // Metadata block
-                            CompactFileMetadata(file: file)
-                                .padding(.horizontal, 10)
-                                .padding(.bottom, 10)
-                        }
-                    }
-                    .onChange(of: appState.selectedFiles) { _ in
-                        currentPage = 0
-                    }
-            } else {
+            if appState.selectedFiles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.questionmark")
                         .font(.system(size: 36))
@@ -827,6 +1111,74 @@ struct CompactPreviewPanel: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Preview a metadata — pouze pro jeden vybraný soubor
+                        if let file = selectedFile {
+                            VStack(spacing: 8) {
+                                PreviewImageView(file: file, currentPage: $currentPage)
+                                    .id("\(file.id)-\(file.contentVersion)")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.horizontal, 8)
+                                    .padding(.top, 8)
+
+                                Text(file.name + "." + file.fileType.rawValue.lowercased())
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 6)
+
+                                if file.pageCount > 1 {
+                                    HStack(spacing: 12) {
+                                        Button(action: {
+                                            if currentPage > 0 { currentPage -= 1 }
+                                        }) {
+                                            Image(systemName: "arrow.left.circle")
+                                                .font(.title3)
+                                        }
+                                        .disabled(currentPage == 0)
+                                        .buttonStyle(.borderless)
+
+                                        Text("\(currentPage + 1)")
+                                            .font(.system(size: 12))
+
+                                        Button(action: {
+                                            if currentPage < file.pageCount - 1 { currentPage += 1 }
+                                        }) {
+                                            Image(systemName: "arrow.right.circle")
+                                                .font(.title3)
+                                        }
+                                        .disabled(currentPage >= file.pageCount - 1)
+                                        .buttonStyle(.borderless)
+                                    }
+                                }
+
+                                Divider()
+                                    .padding(.horizontal, 8)
+
+                                CompactFileMetadata(file: file)
+                                    .id("\(file.id)-\(file.contentVersion)")
+                                    .padding(.horizontal, 10)
+                                    .padding(.bottom, 4)
+                            }
+                            .onChange(of: appState.selectedFiles) { _ in
+                                currentPage = 0
+                            }
+                        }
+
+                        // Souhrn výběru — vždy viditelný
+                        Divider().padding(.horizontal, 8)
+                        SelectionSummaryView()
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+
+                        // Cena — pro PDF soubory
+                        Divider().padding(.horizontal, 8)
+                        FilePricePanel()
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                    }
+                }
             }
         }
         .background(Color(NSColor.controlBackgroundColor))
@@ -836,6 +1188,7 @@ struct CompactPreviewPanel: View {
 // MARK: - Compact File Metadata
 
 struct CompactFileMetadata: View {
+    @EnvironmentObject var appState: AppState
     let file: FileItem
     @State private var pdfMetadata: PDFMetadata?
     @State private var isAnalyzingColors = false
@@ -912,25 +1265,30 @@ struct CompactFileMetadata: View {
     
     private func loadPDFMetadata() {
         guard file.fileType == .pdf else { return }
-        
-        // Reset metadata when file changes
+
+        // Reset při změně souboru
         pdfMetadata = nil
         isAnalyzingColors = false
-        
-        // First load basic metadata
+
+        // Základní metadata (synchronně)
         var metadata = PDFInfoService.shared.extractMetadata(from: file.url)
-        
-        // Then analyze colors in background
+
         guard metadata != nil else {
-            self.pdfMetadata = metadata
+            self.pdfMetadata = nil
             return
         }
 
         guard PageColorAnalyzer.shared.isGSAvailable else {
+            // GS není dostupný — zobraz metadata bez barevné analýzy
             self.pdfMetadata = metadata
+            if let m = metadata { appState.pdfMetadataCache[file.id] = m }
             return
         }
 
+        // Analýza barev (asynchronně).
+        // Poznámka: CompactFileMetadata je struct — [weak self] nelze použít.
+        // Ochranu před race condition zajišťuje .id(file.id) v rodiči, který
+        // celý view znovu vytvoří při změně souboru (čímž odloží stará pdfMetadata).
         isAnalyzingColors = true
         PageColorAnalyzer.shared.analyzePDF(at: file.url) { result in
             self.isAnalyzingColors = false
@@ -939,12 +1297,13 @@ struct CompactFileMetadata: View {
                 metadata?.colorPageCount = colorInfo.colorCount
                 metadata?.blackWhitePageCount = colorInfo.blackWhiteCount
                 self.pdfMetadata = metadata
+                if let m = metadata { appState.pdfMetadataCache[file.id] = m }
             case .failure:
                 self.pdfMetadata = metadata
+                if let m = metadata { appState.pdfMetadataCache[file.id] = m }
             }
         }
-
-        self.pdfMetadata = metadata
+        // Metadata se nezobrazí, dokud callback nedokončí analýzu barev
     }
 }
 
@@ -963,6 +1322,298 @@ struct MetaLine: View {
     }
 }
 
+// MARK: - Selection Summary View
+
+struct SelectionSummaryView: View {
+    @EnvironmentObject var appState: AppState
+
+    private var summary: String {
+        let selected = appState.files.filter { appState.selectedFiles.contains($0.id) }
+        if selected.isEmpty { return "Nic nevybráno" }
+        let pages = selected.reduce(0) { $0 + $1.pageCount }
+        let allImages = selected.allSatisfy { $0.fileType.isImage }
+        let label = allImages
+            ? (selected.count == 1 ? "obrázek" : "obrázků")
+            : (pages == 1 ? "strana" : "stran")
+        return "\(pages) \(label) ve \(selected.count) souboru/ech"
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            Text(summary)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - File Price Panel
+
+struct FilePricePanel: View {
+    @EnvironmentObject var appState: AppState
+
+    // Ceny z Preferences — stejné klíče jako PriceSettingsView
+    @AppStorage("price.a4.bw.1")    private var a4bw1:    Double = 2.0
+    @AppStorage("price.a4.bw.10")   private var a4bw10:   Double = 1.5
+    @AppStorage("price.a4.bw.50")   private var a4bw50:   Double = 1.2
+    @AppStorage("price.a4.bw.100")  private var a4bw100:  Double = 1.0
+    @AppStorage("price.a4.col.1")   private var a4col1:   Double = 8.0
+    @AppStorage("price.a4.col.10")  private var a4col10:  Double = 6.0
+    @AppStorage("price.a4.col.50")  private var a4col50:  Double = 5.0
+    @AppStorage("price.a4.col.100") private var a4col100: Double = 4.0
+    @AppStorage("price.a3.bw.1")    private var a3bw1:    Double = 4.0
+    @AppStorage("price.a3.bw.10")   private var a3bw10:   Double = 3.0
+    @AppStorage("price.a3.bw.50")   private var a3bw50:   Double = 2.5
+    @AppStorage("price.a3.bw.100")  private var a3bw100:  Double = 2.0
+    @AppStorage("price.a3.col.1")   private var a3col1:   Double = 16.0
+    @AppStorage("price.a3.col.10")  private var a3col10:  Double = 12.0
+    @AppStorage("price.a3.col.50")  private var a3col50:  Double = 10.0
+    @AppStorage("price.a3.col.100") private var a3col100: Double = 8.0
+
+    private var selectedPDFFiles: [FileItem] {
+        appState.files.filter {
+            appState.selectedFiles.contains($0.id) && $0.fileType == .pdf
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Záhlaví
+            HStack(spacing: 4) {
+                Image(systemName: "eurosign.circle")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Text("Cena tisku")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            if selectedPDFFiles.isEmpty {
+                Text("Žádné PDF soubory ve výběru")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(selectedPDFFiles) { file in
+                    FilePriceRow(file: file)
+                }
+
+                if selectedPDFFiles.count > 1 {
+                    Divider()
+                    HStack {
+                        Text("Celkem:")
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer()
+                        let total = selectedPDFFiles.reduce(0.0) { $0 + priceForFile($1) }
+                        Text(priceString(total))
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { triggerMissingLoads() }
+        .onChange(of: appState.selectedFiles) { _ in triggerMissingLoads() }
+    }
+
+    private func triggerMissingLoads() {
+        for file in selectedPDFFiles {
+            appState.loadPDFMetadataIfNeeded(for: file)
+        }
+    }
+
+    // MARK: Výpočet ceny pro jeden soubor
+
+    func priceForFile(_ file: FileItem) -> Double {
+        let a3 = isA3(file.pageSize)
+        let meta = appState.pdfMetadataCache[file.id]
+        let bwCount: Int
+        let colorCount: Int
+        if let m = meta, (m.colorPageCount + m.blackWhitePageCount) > 0 {
+            bwCount    = m.blackWhitePageCount
+            colorCount = m.colorPageCount
+        } else {
+            // GS analýza ještě nedoběhla — považujeme vše za ČB
+            bwCount    = file.pageCount
+            colorCount = 0
+        }
+        return Double(bwCount)    * unitPrice(count: bwCount,    isA3: a3, isColor: false)
+             + Double(colorCount) * unitPrice(count: colorCount, isA3: a3, isColor: true)
+    }
+
+    private func isA3(_ size: CGSize) -> Bool {
+        let w = size.width  * 0.352777778
+        let h = size.height * 0.352777778
+        return (abs(w - 297) < 10 && abs(h - 420) < 10)
+            || (abs(w - 420) < 10 && abs(h - 297) < 10)
+    }
+
+    func unitPrice(count: Int, isA3: Bool, isColor: Bool) -> Double {
+        guard count > 0 else { return 0 }
+        let tier = count >= 100 ? 100 : count >= 50 ? 50 : count >= 10 ? 10 : 1
+        switch (isA3, isColor, tier) {
+        case (false, false, 1):   return a4bw1
+        case (false, false, 10):  return a4bw10
+        case (false, false, 50):  return a4bw50
+        case (false, false, _):   return a4bw100
+        case (false, true,  1):   return a4col1
+        case (false, true,  10):  return a4col10
+        case (false, true,  50):  return a4col50
+        case (false, true,  _):   return a4col100
+        case (true,  false, 1):   return a3bw1
+        case (true,  false, 10):  return a3bw10
+        case (true,  false, 50):  return a3bw50
+        case (true,  false, _):   return a3bw100
+        case (true,  true,  1):   return a3col1
+        case (true,  true,  10):  return a3col10
+        case (true,  true,  50):  return a3col50
+        default:                  return a3col100
+        }
+    }
+
+    func priceString(_ v: Double) -> String {
+        String(format: "%.2f Kč", v)
+    }
+}
+
+// MARK: - File Price Row (jeden soubor)
+
+struct FilePriceRow: View {
+    @EnvironmentObject var appState: AppState
+    let file: FileItem
+
+    // Ceny z AppStorage — musí mít stejné klíče
+    @AppStorage("price.a4.bw.1")    private var a4bw1:    Double = 2.0
+    @AppStorage("price.a4.bw.10")   private var a4bw10:   Double = 1.5
+    @AppStorage("price.a4.bw.50")   private var a4bw50:   Double = 1.2
+    @AppStorage("price.a4.bw.100")  private var a4bw100:  Double = 1.0
+    @AppStorage("price.a4.col.1")   private var a4col1:   Double = 8.0
+    @AppStorage("price.a4.col.10")  private var a4col10:  Double = 6.0
+    @AppStorage("price.a4.col.50")  private var a4col50:  Double = 5.0
+    @AppStorage("price.a4.col.100") private var a4col100: Double = 4.0
+    @AppStorage("price.a3.bw.1")    private var a3bw1:    Double = 4.0
+    @AppStorage("price.a3.bw.10")   private var a3bw10:   Double = 3.0
+    @AppStorage("price.a3.bw.50")   private var a3bw50:   Double = 2.5
+    @AppStorage("price.a3.bw.100")  private var a3bw100:  Double = 2.0
+    @AppStorage("price.a3.col.1")   private var a3col1:   Double = 16.0
+    @AppStorage("price.a3.col.10")  private var a3col10:  Double = 12.0
+    @AppStorage("price.a3.col.50")  private var a3col50:  Double = 10.0
+    @AppStorage("price.a3.col.100") private var a3col100: Double = 8.0
+
+    private var panel: FilePricePanel { FilePricePanel() }
+
+    private var meta: PDFMetadata? { appState.pdfMetadataCache[file.id] }
+    private var isA3: Bool {
+        let w = file.pageSize.width  * 0.352777778
+        let h = file.pageSize.height * 0.352777778
+        return (abs(w - 297) < 10 && abs(h - 420) < 10)
+            || (abs(w - 420) < 10 && abs(h - 297) < 10)
+    }
+    private var sizeLabel: String { isA3 ? "A3" : "A4" }
+
+    private var bwCount: Int {
+        guard let m = meta, (m.colorPageCount + m.blackWhitePageCount) > 0 else {
+            return file.pageCount
+        }
+        return m.blackWhitePageCount
+    }
+    private var colorCount: Int {
+        guard let m = meta, (m.colorPageCount + m.blackWhitePageCount) > 0 else { return 0 }
+        return m.colorPageCount
+    }
+    private var isAnalyzing: Bool {
+        meta == nil || (meta!.colorPageCount == 0 && meta!.blackWhitePageCount == 0
+                        && PageColorAnalyzer.shared.isGSAvailable)
+    }
+
+    private func up(_ count: Int, isColor: Bool) -> Double {
+        guard count > 0 else { return 0 }
+        let t = count >= 100 ? 100 : count >= 50 ? 50 : count >= 10 ? 10 : 1
+        switch (isA3, isColor, t) {
+        case (false, false, 1):   return a4bw1
+        case (false, false, 10):  return a4bw10
+        case (false, false, 50):  return a4bw50
+        case (false, false, _):   return a4bw100
+        case (false, true,  1):   return a4col1
+        case (false, true,  10):  return a4col10
+        case (false, true,  50):  return a4col50
+        case (false, true,  _):   return a4col100
+        case (true,  false, 1):   return a3bw1
+        case (true,  false, 10):  return a3bw10
+        case (true,  false, 50):  return a3bw50
+        case (true,  false, _):   return a3bw100
+        case (true,  true,  1):   return a3col1
+        case (true,  true,  10):  return a3col10
+        case (true,  true,  50):  return a3col50
+        default:                  return a3col100
+        }
+    }
+
+    private var totalPrice: Double {
+        Double(bwCount) * up(bwCount, isColor: false)
+      + Double(colorCount) * up(colorCount, isColor: true)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            // Název souboru (zkrácený)
+            Text(file.name)
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+                .foregroundColor(.primary)
+
+            if isAnalyzing && meta == nil {
+                // Metadata se ještě načítají
+                HStack(spacing: 4) {
+                    ProgressView().scaleEffect(0.5)
+                    Text("Analyzuji…")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                // ČB řádek
+                if bwCount > 0 {
+                    HStack(spacing: 0) {
+                        Text("\(sizeLabel) ČB: \(bwCount) str × ")
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.2f", up(bwCount, isColor: false)))
+                        Text(" = ")
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.2f Kč", Double(bwCount) * up(bwCount, isColor: false)))
+                            .foregroundColor(.primary)
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                }
+                // Barevný řádek
+                if colorCount > 0 {
+                    HStack(spacing: 0) {
+                        Text("\(sizeLabel) Bar: \(colorCount) str × ")
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.2f", up(colorCount, isColor: true)))
+                        Text(" = ")
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.2f Kč", Double(colorCount) * up(colorCount, isColor: true)))
+                            .foregroundColor(.primary)
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                }
+                // Celkem za soubor
+                HStack {
+                    Spacer()
+                    Text(String(format: "%.2f Kč", totalPrice))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
 // MARK: - File Row View with Rename Support
 
 struct FileRowView: View {
@@ -974,16 +1625,12 @@ struct FileRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if let thumbnail = file.thumbnail {
-                Image(nsImage: thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 22, height: 22)
-            } else {
-                Image(systemName: file.fileType.icon)
-                    .font(.system(size: 14))
-            }
-            
+            // Obecná ikona podle typu souboru (bez thumbnail)
+            Image(systemName: file.fileType.icon)
+                .font(.system(size: 14))
+                .foregroundColor(file.fileType.listColor)
+                .frame(width: 18)
+
             if isEditing {
                 TextField("name", text: $editedName)
                     .textFieldStyle(.plain)
@@ -1001,11 +1648,12 @@ struct FileRowView: View {
                     .lineLimit(1)
             }
         }
-        .onTapGesture(count: 2) {
-            if !isEditing {
+        .onChange(of: appState.editingFileID) { editID in
+            if editID == file.id && !isEditing {
                 editedName = file.name
                 isEditing = true
                 isFocused = true
+                appState.editingFileID = nil
             }
         }
         .onChange(of: isFocused) { focused in
@@ -1014,14 +1662,14 @@ struct FileRowView: View {
             }
         }
     }
-    
+
     private func commitRename() {
         isEditing = false
         isFocused = false
-        
+
         let newName = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty, newName != file.name else { return }
-        
+
         appState.renameFile(file, to: newName)
     }
 }

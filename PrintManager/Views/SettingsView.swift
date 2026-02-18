@@ -9,19 +9,18 @@ import SwiftUI
 import UserNotifications
 
 struct SettingsView: View {
-    @AppStorage("defaultPrinter") private var defaultPrinter = ""
-    @AppStorage("defaultCopies") private var defaultCopies = 1
-    @AppStorage("defaultTwoSided") private var defaultTwoSided = false
-    @AppStorage("defaultCollate") private var defaultCollate = true
-    @AppStorage("defaultFitToPage") private var defaultFitToPage = false
+    @AppStorage("defaultPrinter")    private var defaultPrinter    = ""
+    @AppStorage("defaultCopies")     private var defaultCopies     = 1
+    @AppStorage("defaultTwoSided")   private var defaultTwoSided   = false
+    @AppStorage("defaultCollate")    private var defaultCollate    = true
+    @AppStorage("defaultFitToPage")  private var defaultFitToPage  = false
     @AppStorage("autoRefreshPrinters") private var autoRefreshPrinters = true
     @AppStorage("compressionQuality") private var compressionQuality = 0.7
-    @AppStorage("ocrLanguage") private var ocrLanguage = "en"
-    @AppStorage("defaultDPI") private var defaultDPI = 300
-    @AppStorage("thumbnailSize") private var thumbnailSize = 80.0
-    
+    @AppStorage("ocrLanguage")       private var ocrLanguage       = "en"
+    @AppStorage("defaultDPI")        private var defaultDPI        = 300
+
     @StateObject private var printManager = PrintManager()
-    
+
     var body: some View {
         TabView {
             // General Settings
@@ -34,47 +33,172 @@ struct SettingsView: View {
                 autoRefreshPrinters: $autoRefreshPrinters,
                 printManager: printManager
             )
-            .tabItem {
-                Label("General", systemImage: "gear")
-            }
-            
+            .tabItem { Label("General", systemImage: "gear") }
+
             // PDF Settings
             PDFSettingsView(
                 compressionQuality: $compressionQuality,
                 ocrLanguage: $ocrLanguage,
                 defaultDPI: $defaultDPI
             )
-            .tabItem {
-                Label("PDF", systemImage: "doc.fill")
-            }
-            
-            // Image Settings
-            ImageSettingsView(
-                thumbnailSize: $thumbnailSize
-            )
-            .tabItem {
-                Label("Images", systemImage: "photo.fill")
-            }
-            
+            .tabItem { Label("PDF", systemImage: "doc.fill") }
+
             // CloudConvert
             CloudConvertSettingsView()
-                .tabItem {
-                    Label("CloudConvert", systemImage: "cloud.fill")
-                }
-            
+                .tabItem { Label("CloudConvert", systemImage: "cloud.fill") }
+
             // Google
             GoogleSettingsView()
-                .tabItem {
-                    Label("Google", systemImage: "g.circle.fill")
-                }
+                .tabItem { Label("Google", systemImage: "g.circle.fill") }
+
+            // Cena tisku
+            PriceSettingsView()
+                .tabItem { Label("Cena", systemImage: "eurosign.circle") }
 
             // About
             AboutView()
-                .tabItem {
-                    Label("About", systemImage: "info.circle")
-                }
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 500, height: 420)
+        .frame(width: 520, height: 460)
+    }
+}
+
+// MARK: - Price Settings View
+
+struct PriceSettingsView: View {
+
+    // A4 ČB
+    @AppStorage("price.a4.bw.1")    private var a4bw1:    Double = 2.0
+    @AppStorage("price.a4.bw.10")   private var a4bw10:   Double = 1.5
+    @AppStorage("price.a4.bw.50")   private var a4bw50:   Double = 1.2
+    @AppStorage("price.a4.bw.100")  private var a4bw100:  Double = 1.0
+    // A4 Barevně
+    @AppStorage("price.a4.col.1")   private var a4col1:   Double = 8.0
+    @AppStorage("price.a4.col.10")  private var a4col10:  Double = 6.0
+    @AppStorage("price.a4.col.50")  private var a4col50:  Double = 5.0
+    @AppStorage("price.a4.col.100") private var a4col100: Double = 4.0
+    // A3 ČB
+    @AppStorage("price.a3.bw.1")    private var a3bw1:    Double = 4.0
+    @AppStorage("price.a3.bw.10")   private var a3bw10:   Double = 3.0
+    @AppStorage("price.a3.bw.50")   private var a3bw50:   Double = 2.5
+    @AppStorage("price.a3.bw.100")  private var a3bw100:  Double = 2.0
+    // A3 Barevně
+    @AppStorage("price.a3.col.1")   private var a3col1:   Double = 16.0
+    @AppStorage("price.a3.col.10")  private var a3col10:  Double = 12.0
+    @AppStorage("price.a3.col.50")  private var a3col50:  Double = 10.0
+    @AppStorage("price.a3.col.100") private var a3col100: Double = 8.0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Záhlaví tabulky
+            HStack(spacing: 0) {
+                Text("Formát / Typ")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                tierHeader("1+")
+                tierHeader("10+")
+                tierHeader("50+")
+                tierHeader("100+")
+                Text("Kč/str")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .frame(width: 42, alignment: .trailing)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    priceRow(label: "A4 ČB",
+                             v1: $a4bw1, v10: $a4bw10, v50: $a4bw50, v100: $a4bw100)
+                    Divider().padding(.leading, 16)
+                    priceRow(label: "A4 Barevně",
+                             v1: $a4col1, v10: $a4col10, v50: $a4col50, v100: $a4col100)
+                    Divider().padding(.leading, 16)
+                    priceRow(label: "A3 ČB",
+                             v1: $a3bw1, v10: $a3bw10, v50: $a3bw50, v100: $a3bw100)
+                    Divider().padding(.leading, 16)
+                    priceRow(label: "A3 Barevně",
+                             v1: $a3col1, v10: $a3col10, v50: $a3col50, v100: $a3col100)
+                }
+            }
+
+            Divider()
+
+            // Vysvětlivka
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Cenová hladina se určí podle celkového počtu stran ve výběru.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("Ceny jsou v Kč za stránku včetně DPH.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.controlBackgroundColor))
+        }
+    }
+
+    @ViewBuilder
+    private func tierHeader(_ t: String) -> some View {
+        Text(t)
+            .frame(width: 62, alignment: .trailing)
+            .foregroundColor(.secondary)
+    }
+
+    @ViewBuilder
+    private func priceRow(label: String,
+                          v1: Binding<Double>, v10: Binding<Double>,
+                          v50: Binding<Double>, v100: Binding<Double>) -> some View {
+        HStack(spacing: 0) {
+            Text(label)
+                .font(.system(size: 12))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            PriceField(value: v1)
+            PriceField(value: v10)
+            PriceField(value: v50)
+            PriceField(value: v100)
+            Text("Kč")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .frame(width: 42, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+}
+
+/// Editovatelné pole pro cenu — TextField s Double binding
+private struct PriceField: View {
+    @Binding var value: Double
+    @State private var text: String = ""
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 58)
+            .font(.system(size: 11, design: .monospaced))
+            .onAppear { text = fmt(value) }
+            .onSubmit { commit() }
+            .onChange(of: value) { text = fmt($0) }
+            .onExitCommand { commit() }
+    }
+
+    private func fmt(_ v: Double) -> String { String(format: "%.2f", v) }
+
+    private func commit() {
+        let cleaned = text.replacingOccurrences(of: ",", with: ".")
+        if let d = Double(cleaned), d >= 0 {
+            value = d
+        }
+        text = fmt(value)
     }
 }
 
@@ -88,10 +212,11 @@ struct GeneralSettingsView: View {
     @Binding var defaultFitToPage: Bool
     @Binding var autoRefreshPrinters: Bool
     @ObservedObject var printManager: PrintManager
-    
-    // Notification settings
+
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
-    
+    @AppStorage("tableRowFontSize")     private var tableRowFontSize: Double = 12
+    @AppStorage("alwaysOnTop")          private var alwaysOnTop = false
+
     var body: some View {
         Form {
             Section("Default Print Settings") {
@@ -101,35 +226,58 @@ struct GeneralSettingsView: View {
                         Text(printer).tag(printer)
                     }
                 }
-                
                 Stepper("Copies: \(defaultCopies)", value: $defaultCopies, in: 1...999)
-                
                 Toggle("Two-sided printing", isOn: $defaultTwoSided)
                 Toggle("Collate pages", isOn: $defaultCollate)
                 Toggle("Fit to page", isOn: $defaultFitToPage)
             }
-            
+
+            Section("Zobrazení") {
+                Picker("Velikost písma v tabulce:", selection: $tableRowFontSize) {
+                    Text("8").tag(8.0)
+                    Text("10").tag(10.0)
+                    Text("11").tag(11.0)
+                    Text("12 (výchozí)").tag(12.0)
+                    Text("13").tag(13.0)
+                    Text("14").tag(14.0)
+                    Text("16").tag(16.0)
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 340)
+            }
+
             Section("Behavior") {
                 Toggle("Auto-refresh printer list", isOn: $autoRefreshPrinters)
+                Toggle("Always on top", isOn: $alwaysOnTop)
+                    .onChange(of: alwaysOnTop) { val in
+                        applyWindowLevel(floating: val)
+                    }
             }
-            
+
             Section("Notifications") {
                 Toggle("Enable notifications", isOn: $notificationsEnabled)
                     .onChange(of: notificationsEnabled) { newValue in
                         if newValue {
-                            // Request notification permission if not granted
-                            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+                            UNUserNotificationCenter.current()
+                                .requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
                         }
                     }
-                
                 if !notificationsEnabled {
-                    Text("Notifications are disabled. You won't receive alerts when print jobs complete or errors occur.")
+                    Text("Notifications are disabled.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
         }
         .padding()
+    }
+
+    private func applyWindowLevel(floating: Bool) {
+        DispatchQueue.main.async {
+            for w in NSApp.windows where w.isVisible && !w.isSheet {
+                w.level = floating ? .floating : .normal
+            }
+        }
     }
 }
 
@@ -277,11 +425,12 @@ struct FeatureRow: View {
 struct GoogleSettingsView: View {
     @ObservedObject private var googleAuth = GoogleOAuthManager.shared
 
+    @AppStorage("googleClientId")     private var clientId     = ""
     @AppStorage("googleClientSecret") private var clientSecret = ""
     @State private var showSecret = false
 
-    private var effectiveSecret: String {
-        clientSecret.isEmpty ? "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" : clientSecret
+    private var credentialsConfigured: Bool {
+        !clientId.isEmpty && !clientSecret.isEmpty
     }
 
     var body: some View {
@@ -328,7 +477,7 @@ struct GoogleSettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                        .disabled(googleAuth.isAuthenticating)
+                        .disabled(googleAuth.isAuthenticating || !credentialsConfigured)
                     }
                 }
 
@@ -337,10 +486,23 @@ struct GoogleSettingsView: View {
                         .font(.caption)
                         .foregroundColor(.red)
                 }
+
+                if !credentialsConfigured && !googleAuth.isAuthenticated {
+                    Label("Nejdříve zadejte Client ID a Client Secret níže.", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
-            // Client Secret
-            Section("OAuth Client Secret") {
+            // OAuth přihlašovací údaje
+            Section("OAuth přihlašovací údaje") {
+                HStack {
+                    Text("Client ID:")
+                        .frame(width: 110, alignment: .trailing)
+                    TextField("681515…apps.googleusercontent.com", text: $clientId)
+                        .textFieldStyle(.roundedBorder)
+                }
+
                 HStack {
                     Text("Client Secret:")
                         .frame(width: 110, alignment: .trailing)
@@ -360,10 +522,6 @@ struct GoogleSettingsView: View {
                     .help(showSecret ? "Skrýt" : "Zobrazit")
                 }
 
-                Text("Aktuálně aktivní: \(String(effectiveSecret.prefix(12)))…")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
                 HStack {
                     Spacer()
                     Button("Otevřít Google Cloud Console") {
@@ -379,9 +537,9 @@ struct GoogleSettingsView: View {
             // Informace
             Section("Jak to funguje") {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("1. Klikni \"Prihlas se\" — otevre se prohlizec s prihlasovaci strankou Google")
-                    Text("2. Přihlásíš se a udělíš přístup k souborům na Drive")
-                    Text("3. Přihlášení proběhne automaticky, okno se samo zavře")
+                    Text("1. Vytvoř OAuth 2.0 Desktop App klienta v Google Cloud Console")
+                    Text("2. Zkopíruj Client ID a Client Secret sem")
+                    Text("3. Klikni \"Přihlásit se\" — otevře se prohlížeč s přihlašovací stránkou Google")
                     Text("4. Soubory se nahrají na Drive, převedou do PDF a ihned smažou")
                 }
                 .font(.caption)

@@ -12,28 +12,41 @@ import Vision
 import PDFKit
 
 class ImageService {
-    
+
+    // Sdílený CIContext — alokuje GPU zdroje pouze jednou
+    private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+
     // MARK: - Convert to PDF
-    
+
     func convertToPDF(urls: [URL]) async throws -> URL {
+        guard !urls.isEmpty else { throw ImageError.invalidImage }
+
         let pdfDocument = PDFDocument()
-        
-        for (index, url) in urls.enumerated() {
-            guard let image = NSImage(contentsOf: url),
-                  let page = PDFPage(image: image) else {
+
+        for url in urls {
+            // CGImageSource okamžitě dekóduje pixel data — spolehlivější než NSImage(contentsOf:)
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cgImage = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
                 continue
             }
-            
-            pdfDocument.insert(page, at: index)
+            let nsImage = NSImage(cgImage: cgImage,
+                                  size: NSSize(width: cgImage.width, height: cgImage.height))
+            guard let page = PDFPage(image: nsImage) else { continue }
+            // Vždy append (pageCount roste s každou vloženou stránkou)
+            pdfDocument.insert(page, at: pdfDocument.pageCount)
         }
-        
+
+        guard pdfDocument.pageCount > 0 else { throw ImageError.processingFailed }
+
         let outputURL = urls[0].deletingLastPathComponent()
-            .appendingPathComponent("converted_\(Date().timeIntervalSince1970).pdf")
-        
-        pdfDocument.write(to: outputURL)
+            .appendingPathComponent("converted_\(Int(Date().timeIntervalSince1970)).pdf")
+
+        guard pdfDocument.write(to: outputURL) else {
+            throw ImageError.saveFailed
+        }
         return outputURL
     }
-    
+
     // MARK: - Resize Image
     
     func resizeImage(url: URL, width: Int, height: Int) async throws -> URL {
@@ -87,9 +100,7 @@ class ImageService {
         
         let ciImage = CIImage(cgImage: cgImage)
         let rotatedImage = ciImage.transformed(by: CGAffineTransform(rotationAngle: degrees * .pi / 180))
-        
-        let context = CIContext()
-        guard let outputCGImage = context.createCGImage(rotatedImage, from: rotatedImage.extent) else {
+        guard let outputCGImage = ImageService.ciContext.createCGImage(rotatedImage, from: rotatedImage.extent) else {
             throw ImageError.processingFailed
         }
         
@@ -122,14 +133,10 @@ class ImageService {
         guard let outputImage = filter.outputImage else {
             throw ImageError.processingFailed
         }
-        
-        let context = CIContext()
-        guard let outputCGImage = context.createCGImage(outputImage, from: outputImage.extent) else {
+        guard let outputCGImage = ImageService.ciContext.createCGImage(outputImage, from: outputImage.extent) else {
             throw ImageError.processingFailed
         }
-        
         let finalImage = NSImage(cgImage: outputCGImage, size: NSSize(width: outputCGImage.width, height: outputCGImage.height))
-        
         let outputURL = url.deletingLastPathComponent()
             .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_inverted")
             .appendingPathExtension(url.pathExtension)
@@ -157,10 +164,11 @@ class ImageService {
         var extractedURLs: [URL] = []
         
         for (index, rect) in rectangles.enumerated() {
-            // Convert normalized coordinates to pixel coordinates
+            // Převod normalizovaných souřadnic Vision (počátek vlevo dole) na
+            // pixelové souřadnice CGImage (počátek vlevo nahoře) — nutný flip osy Y
             let imageRect = CGRect(
                 x: rect.origin.x * CGFloat(cgImage.width),
-                y: rect.origin.y * CGFloat(cgImage.height),
+                y: (1.0 - rect.origin.y - rect.size.height) * CGFloat(cgImage.height),
                 width: rect.size.width * CGFloat(cgImage.width),
                 height: rect.size.height * CGFloat(cgImage.height)
             )
@@ -279,14 +287,10 @@ class ImageService {
         guard let outputImage = filter.outputImage else {
             throw ImageError.processingFailed
         }
-        
-        let context = CIContext()
-        guard let outputCGImage = context.createCGImage(outputImage, from: outputImage.extent) else {
+        guard let outputCGImage = ImageService.ciContext.createCGImage(outputImage, from: outputImage.extent) else {
             throw ImageError.processingFailed
         }
-        
         let finalImage = NSImage(cgImage: outputCGImage, size: NSSize(width: outputCGImage.width, height: outputCGImage.height))
-        
         let outputURL = url.deletingLastPathComponent()
             .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_grayscale")
             .appendingPathExtension(url.pathExtension)

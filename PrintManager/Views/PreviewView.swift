@@ -133,6 +133,9 @@ struct PreviewImageView: View {
         .onChange(of: currentPage) { _ in
             loadPreview()
         }
+        .onChange(of: file.contentVersion) { _ in
+            loadPreview()
+        }
     }
     
     private func loadPreview() {

@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 import AppKit
 
 struct FileItem: Identifiable, Hashable {
-    let id: UUID
+    var id: UUID
     let url: URL
     let name: String
     let fileType: FileType
@@ -21,6 +21,9 @@ struct FileItem: Identifiable, Hashable {
     let colorInfo: String
     var status: FileStatus
     var thumbnail: NSImage?
+    /// Inkrementuje se při každé modifikaci obsahu (rotace, crop…).
+    /// Views ji používají pro detekci změny obsahu i při stejném UUID.
+    var contentVersion: Int = 0
     
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
@@ -76,9 +79,17 @@ struct FileItem: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    
+
+    /// Porovnává i obsah, aby SwiftUI Table vědělo, že se řádek změnil
+    /// (např. status .processing → .ready, pageCount 0 → N).
     static func == (lhs: FileItem, rhs: FileItem) -> Bool {
         lhs.id == rhs.id
+            && lhs.status == rhs.status
+            && lhs.pageCount == rhs.pageCount
+            && lhs.colorInfo == rhs.colorInfo
+            && lhs.name == rhs.name
+            && lhs.url == rhs.url
+            && lhs.contentVersion == rhs.contentVersion
     }
 }
 
@@ -105,7 +116,7 @@ enum FileType: String, Codable {
     var icon: String {
         switch self {
         case .pdf:
-            return "doc.fill"
+            return "doc.richtext.fill"
         case .jpeg, .png, .tiff, .bmp, .gif:
             return "photo.fill"
         case .doc, .docx, .odt:
@@ -116,6 +127,24 @@ enum FileType: String, Codable {
             return "play.rectangle.fill"
         case .unknown:
             return "questionmark.circle.fill"
+        }
+    }
+
+    /// Barva ikony v seznamu souborů
+    var listColor: Color {
+        switch self {
+        case .pdf:
+            return Color(red: 0.85, green: 0.15, blue: 0.10)   // červená (PDF)
+        case .jpeg, .png, .tiff, .bmp, .gif:
+            return Color(red: 0.10, green: 0.50, blue: 0.90)   // modrá (obrázek)
+        case .doc, .docx, .odt:
+            return Color(red: 0.18, green: 0.38, blue: 0.78)   // tmavě modrá (Word)
+        case .xls, .xlsx, .ods:
+            return Color(red: 0.15, green: 0.60, blue: 0.30)   // zelená (Excel)
+        case .ppt, .pptx, .odp:
+            return Color(red: 0.85, green: 0.38, blue: 0.10)   // oranžová (PPT)
+        case .unknown:
+            return .secondary
         }
     }
     
@@ -333,34 +362,35 @@ struct PrintSettings {
     func toLPArguments() -> [String] {
         var args: [String] = ["-d", printer]
 
-        if !presetOptions.isEmpty {
-            // Preset režim: použij options z macOS systémového presetu
-            args += presetOptions
-            // Počet kopií lze přepsat manuálně pokud se liší od výchozí 1
-            if copies != 1 && !presetOptions.contains("-n") {
-                args += ["-n", "\(copies)"]
-            }
-        } else {
-            // Manuální režim: individuální nastavení
-            args += ["-o", "media=\(paperSize)"]
-            args += ["-n", "\(copies)"]
-            if twoSided {
-                args += ["-o", "sides=two-sided-long-edge"]
-            }
-            if collate {
-                args += ["-o", "Collate=True"]
-            }
-            if fitToPage {
-                args += ["-o", "fit-to-page"]
-            }
-            if landscape {
-                args += ["-o", "landscape"]
-            }
-            switch colorMode {
-            case "grayscale": args += ["-o", "ColorModel=Gray"]
-            case "color":     args += ["-o", "ColorModel=RGB"]
-            default:          break
-            }
+        // Preset (Apple CUPS formát: -o preset="název")
+        if let presetName = preset, !presetName.isEmpty {
+            args += ["-o", "preset=\"\(presetName)\""]
+        }
+
+        // Rozvinuté options z macOS systémového presetu (mohou být prázdné)
+        args += presetOptions
+
+        // Papír, kopie — vždy
+        args += ["-o", "media=\(paperSize)"]
+        args += ["-n", "\(copies)"]
+
+        // Collate
+        if collate { args += ["-o", "collate=true"] }
+
+        // Oboustranný tisk
+        if twoSided { args += ["-o", "sides=two-sided-long-edge"] }
+
+        // Přizpůsobit stránce
+        if fitToPage { args += ["-o", "fit-to-page"] }
+
+        // Orientace
+        if landscape { args += ["-o", "landscape"] }
+
+        // Barevný režim (CUPS ColorMode)
+        switch colorMode {
+        case "grayscale": args += ["-o", "ColorMode=GrayScale"]
+        case "color":     args += ["-o", "ColorMode=Color"]
+        default:          break
         }
 
         return args
