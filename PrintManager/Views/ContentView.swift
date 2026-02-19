@@ -115,6 +115,10 @@ struct ContentView: View {
             BatchRenameView(isPresented: $appState.showBatchRename)
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showDrawingsDialog) {
+            DrawingsDialog(isPresented: $appState.showDrawingsDialog)
+                .environmentObject(appState)
+        }
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 // Cmd+I to toggle preview
@@ -134,6 +138,17 @@ struct ContentView: View {
                         }
                     }
                     return nil
+                }
+                // Mezerník — Quick Look (jen pokud hlavní okno je aktivní a není fokus v textu)
+                if event.keyCode == 49 {
+                    let responder = NSApp.keyWindow?.firstResponder
+                    let inTextField = responder is NSTextView || responder is NSTextField
+                    if !inTextField && !appState.files.isEmpty {
+                        DispatchQueue.main.async {
+                            QuickLookController.shared.toggle(appState: appState)
+                        }
+                        return nil
+                    }
                 }
                 // Backspace / Cmd+Backspace — jen pokud není fokus v textovém poli
                 if event.keyCode == 51 {
@@ -201,6 +216,48 @@ struct PrinterListPanel: View {
 
             Divider()
 
+            // Preset Section — načítá se ze systémových plistů macOS
+            if !appState.selectedPrinter.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Preset")
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer()
+                        Button {
+                            appState.loadSystemPresets()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Znovu načíst presety ze systému")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+
+                    if appState.availableSystemPresets.isEmpty {
+                        Text("Žádné presety")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10)
+                    } else {
+                        Picker("Preset:", selection: $appState.selectedPreset) {
+                            Text("— bez presetu —").tag(nil as String?)
+                            ForEach(appState.availableSystemPresets) { preset in
+                                Text(preset.name).tag(preset.name as String?)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .padding(.horizontal, 8)
+                    }
+                }
+                .padding(.bottom, 8)
+                .background(Color(NSColor.controlBackgroundColor))
+
+                Divider()
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if printManager.availablePrinters.isEmpty {
@@ -247,48 +304,6 @@ struct PrinterListPanel: View {
                 .padding(.vertical, 4)
             }
             .background(Color(NSColor.controlBackgroundColor))
-            
-            // Preset Section — načítá se ze systémových plistů macOS
-            if !appState.selectedPrinter.isEmpty {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Preset")
-                            .font(.system(size: 11, weight: .semibold))
-                        Spacer()
-                        Button {
-                            appState.loadSystemPresets()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10))
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Znovu načíst presety ze systému")
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-
-                    if appState.availableSystemPresets.isEmpty {
-                        Text("Žádné presety")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 10)
-                    } else {
-                        Picker("Preset:", selection: $appState.selectedPreset) {
-                            Text("— bez presetu —").tag(nil as String?)
-                            ForEach(appState.availableSystemPresets) { preset in
-                                Text(preset.name).tag(preset.name as String?)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .padding(.horizontal, 8)
-                    }
-                }
-                .padding(.bottom, 8)
-                .background(Color(NSColor.controlBackgroundColor))
-            }
 
             // ── Apps sekce ───────────────────────────────────────────────────
             Divider()
@@ -368,19 +383,25 @@ struct PrinterListPanel: View {
         }
     }
 
-    // Otevře NSOpenPanel pro výběr .app souboru
+    // Otevře NSOpenPanel pro výběr .app aplikace
     private func pickApp() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.application]
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.applicationBundle]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.prompt = "Přidat"
-        if panel.runModal() == .OK {
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK else { return }
             for url in panel.urls {
                 appState.addExternalApp(url: url)
             }
+        }
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            panel.begin(completionHandler: handler)
         }
     }
 }
@@ -1052,6 +1073,19 @@ struct BottomActionBar: View {
             }
             .frame(width: 140)
 
+            // Výkresy
+            Button {
+                appState.openDrawingsDialog()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "pencil.and.ruler")
+                    Text("Výkresy")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.selectedFiles.isEmpty)
+            .help("Zpracování naskenovaných výkresů")
+
             // Print button
             Button("Print selected") {
                 appState.printSelectedFiles()
@@ -1069,6 +1103,7 @@ struct BottomActionBar: View {
 struct CompactPreviewPanel: View {
     @EnvironmentObject var appState: AppState
     @State private var currentPage = 0
+    @State private var selectedTab: Int = 0
 
     private var selectedFile: FileItem? {
         guard appState.selectedFiles.count == 1,
@@ -1082,9 +1117,9 @@ struct CompactPreviewPanel: View {
             HStack {
                 Text("Preview file")
                     .font(.headline)
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         appState.showPreview.toggle()
@@ -1112,71 +1147,80 @@ struct CompactPreviewPanel: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // Nahoře vždy: preview obrázek
+                if let file = selectedFile {
+                    VStack(spacing: 8) {
+                        PreviewImageView(file: file, currentPage: $currentPage)
+                            .id("\(file.id)-\(file.contentVersion)")
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 8)
+
+                        Text(file.name + "." + file.fileType.rawValue.lowercased())
+                            .font(.system(size: 11, weight: .semibold))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 6)
+
+                        if file.pageCount > 1 {
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    if currentPage > 0 { currentPage -= 1 }
+                                }) {
+                                    Image(systemName: "arrow.left.circle")
+                                        .font(.title3)
+                                }
+                                .disabled(currentPage == 0)
+                                .buttonStyle(.borderless)
+
+                                Text("\(currentPage + 1)")
+                                    .font(.system(size: 12))
+
+                                Button(action: {
+                                    if currentPage < file.pageCount - 1 { currentPage += 1 }
+                                }) {
+                                    Image(systemName: "arrow.right.circle")
+                                        .font(.title3)
+                                }
+                                .disabled(currentPage >= file.pageCount - 1)
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                    .onChange(of: appState.selectedFiles) { _ in currentPage = 0 }
+                }
+
+                Divider()
+
+                // Záložky
+                Picker("", selection: $selectedTab) {
+                    Text("Informace").tag(0)
+                    Text("Kalkulace").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+
+                Divider()
+
+                // Obsah záložky
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Preview a metadata — pouze pro jeden vybraný soubor
-                        if let file = selectedFile {
-                            VStack(spacing: 8) {
-                                PreviewImageView(file: file, currentPage: $currentPage)
-                                    .id("\(file.id)-\(file.contentVersion)")
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.horizontal, 8)
-                                    .padding(.top, 8)
-
-                                Text(file.name + "." + file.fileType.rawValue.lowercased())
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 6)
-
-                                if file.pageCount > 1 {
-                                    HStack(spacing: 12) {
-                                        Button(action: {
-                                            if currentPage > 0 { currentPage -= 1 }
-                                        }) {
-                                            Image(systemName: "arrow.left.circle")
-                                                .font(.title3)
-                                        }
-                                        .disabled(currentPage == 0)
-                                        .buttonStyle(.borderless)
-
-                                        Text("\(currentPage + 1)")
-                                            .font(.system(size: 12))
-
-                                        Button(action: {
-                                            if currentPage < file.pageCount - 1 { currentPage += 1 }
-                                        }) {
-                                            Image(systemName: "arrow.right.circle")
-                                                .font(.title3)
-                                        }
-                                        .disabled(currentPage >= file.pageCount - 1)
-                                        .buttonStyle(.borderless)
-                                    }
-                                }
-
-                                Divider()
-                                    .padding(.horizontal, 8)
-
+                        if selectedTab == 0 {
+                            if let file = selectedFile {
                                 CompactFileMetadata(file: file)
                                     .id("\(file.id)-\(file.contentVersion)")
                                     .padding(.horizontal, 10)
-                                    .padding(.bottom, 4)
+                                    .padding(.vertical, 4)
+                                Divider().padding(.horizontal, 8)
                             }
-                            .onChange(of: appState.selectedFiles) { _ in
-                                currentPage = 0
-                            }
+                            SelectionSummaryView()
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                        } else {
+                            FilePricePanel()
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
                         }
-
-                        // Souhrn výběru — vždy viditelný
-                        Divider().padding(.horizontal, 8)
-                        SelectionSummaryView()
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-
-                        // Cena — pro PDF soubory
-                        Divider().padding(.horizontal, 8)
-                        FilePricePanel()
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
                     }
                 }
             }

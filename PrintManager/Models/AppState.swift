@@ -176,6 +176,40 @@ class AppState: ObservableObject {
     private let officeConversionService = OfficeConversionService()
     private let blankPageService = BlankPageService()
     
+    // Drawings
+    @Published var showDrawingsDialog = false
+
+    // Quick Look
+    var quickLookFileID: UUID?
+
+    func quickLookMoveUp() {
+        guard let current = quickLookFileID,
+              let idx = files.firstIndex(where: { $0.id == current }),
+              idx > 0 else { return }
+        let prev = files[idx - 1]
+        quickLookFileID = prev.id
+        selectedFiles = [prev.id]
+        NotificationCenter.default.post(name: .quickLookFileChanged, object: nil)
+    }
+
+    func quickLookMoveDown() {
+        guard let current = quickLookFileID,
+              let idx = files.firstIndex(where: { $0.id == current }),
+              idx < files.count - 1 else { return }
+        let next = files[idx + 1]
+        quickLookFileID = next.id
+        selectedFiles = [next.id]
+        NotificationCenter.default.post(name: .quickLookFileChanged, object: nil)
+    }
+
+    func openDrawingsDialog() {
+        guard !selectedFiles.isEmpty else {
+            logWarning("Vyber soubory pro zpracování výkresů")
+            return
+        }
+        showDrawingsDialog = true
+    }
+
     // Compression state
     @Published var compressionProgress: Double = 0.0
     @Published var compressionMessage = ""
@@ -1343,4 +1377,8 @@ class AppState: ObservableObject {
             selectedPreset = nil
         }
     }
+}
+
+extension Notification.Name {
+    static let quickLookFileChanged = Notification.Name("quickLookFileChanged")
 }
