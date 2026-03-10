@@ -272,12 +272,22 @@ struct PrintingSettingsView: View {
 
     private func checkCUPSStatus() {
         cupsStatus = .unknown
-        DispatchQueue.global().async {
-            let result = shell("launchctl list | grep -q org.cups.cupsd && echo running || echo stopped")
+        // Nejspolehlivější check: zkusit HTTP request na localhost:631
+        // launchctl list bez sudo nevidí system-domain služby
+        guard let url = URL(string: "http://localhost:631") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 3)
+        req.httpMethod = "HEAD"
+        URLSession.shared.dataTask(with: req) { _, response, error in
             DispatchQueue.main.async {
-                cupsStatus = result.trimmingCharacters(in: .whitespacesAndNewlines) == "running" ? .running : .stopped
+                if let http = response as? HTTPURLResponse, http.statusCode > 0 {
+                    cupsStatus = .running
+                } else if error == nil {
+                    cupsStatus = .running
+                } else {
+                    cupsStatus = .stopped
+                }
             }
-        }
+        }.resume()
     }
 
     private func enableCUPS() {
