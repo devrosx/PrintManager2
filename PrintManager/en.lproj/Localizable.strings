@@ -3,8 +3,22 @@
 
 /* MARK: - Settings tabs (SettingsTab.rawValue) */
 "Obecné" = "General";
+"Tisk" = "Printing";
 "Cena" = "Pricing";
 "About" = "About";
+
+/* MARK: - Printing Settings */
+"CUPS – Common Unix Printing System" = "CUPS – Common Unix Printing System";
+"Spravuje tiskové fronty a komunikaci s tiskárnami." = "Manages print queues and communication with printers.";
+"Zjišťuji stav…" = "Checking status…";
+"CUPS běží" = "CUPS is running";
+"CUPS není spuštěn" = "CUPS is not running";
+"Obnovit" = "Refresh";
+"Zapnout CUPS" = "Enable CUPS";
+"Pokud CUPS není spuštěn, tisk nebude fungovat. Toto tlačítko ho načte a povolí jako systémovou službu." = "If CUPS is not running, printing will not work. This button loads and enables it as a system service.";
+"Opravit zaseknuté tiskové joby" = "Fix Stuck Print Jobs";
+"macOS CUPS někdy zastaví tiskový job před dokončením (výchozí časový limit). Nastavení MaxJobTime=0 odstraní tento limit — vhodné pro velké soubory a dávkový tisk." = "macOS CUPS sometimes stops a print job before completion (default time limit). Setting MaxJobTime=0 removes this limit — useful for large files and batch printing.";
+"Nastavit MaxJobTime = 0" = "Set MaxJobTime = 0";
 
 /* MARK: - Tabs */
 "Informace" = "Information";

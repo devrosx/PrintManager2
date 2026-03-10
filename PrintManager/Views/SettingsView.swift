@@ -26,6 +26,7 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable {
         case general      = "Obecné"
         case pdf          = "PDF"
+        case printing     = "Tisk"
         case cloudConvert = "CloudConvert"
         case ilovepdf     = "iLovePDF"
         case google       = "Google"
@@ -36,6 +37,7 @@ struct SettingsView: View {
             switch self {
             case .general:      return "gear"
             case .pdf:          return "doc.fill"
+            case .printing:     return "printer.fill"
             case .cloudConvert: return "cloud.fill"
             case .ilovepdf:     return "heart.circle.fill"
             case .google:       return "g.circle.fill"
@@ -48,6 +50,7 @@ struct SettingsView: View {
             switch self {
             case .general:      return .gray
             case .pdf:          return .red
+            case .printing:     return .indigo
             case .cloudConvert: return .blue
             case .ilovepdf:     return .pink
             case .google:       return Color(red: 0.25, green: 0.52, blue: 0.96)
@@ -105,6 +108,8 @@ struct SettingsView: View {
                         ocrLanguage: $ocrLanguage,
                         defaultDPI: $defaultDPI
                     )
+                case .printing:
+                    PrintingSettingsView()
                 case .cloudConvert:
                     CloudConvertSettingsView()
                 case .ilovepdf:
@@ -159,6 +164,161 @@ private struct SettingsTabButton: View {
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.13), value: isSelected)
+    }
+}
+
+// MARK: - Printing Settings View
+
+struct PrintingSettingsView: View {
+
+    enum CUPSStatus { case unknown, running, stopped }
+
+    @State private var cupsStatus: CUPSStatus = .unknown
+    @State private var maxJobTimeResult: ActionResult = .idle
+    @State private var cupsEnableResult: ActionResult = .idle
+
+    enum ActionResult { case idle, ok, failed(String) }
+
+    var body: some View {
+        Form {
+            // MARK: CUPS Status
+            Section("CUPS") {
+                HStack(spacing: 10) {
+                    Image(systemName: "printer.fill")
+                        .font(DS.Typography.mediumIcon)
+                        .foregroundColor(.indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("CUPS – Common Unix Printing System")
+                            .font(.headline)
+                        Text("Spravuje tiskové fronty a komunikaci s tiskárnami.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                HStack(spacing: 10) {
+                    switch cupsStatus {
+                    case .unknown:
+                        Image(systemName: "circle.dotted").foregroundColor(.secondary)
+                        Text("Zjišťuji stav…").foregroundColor(.secondary)
+                    case .running:
+                        Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                        Text("CUPS běží")
+                    case .stopped:
+                        Image(systemName: "xmark.circle.fill").foregroundColor(.red)
+                        Text("CUPS není spuštěn")
+                    }
+                    Spacer()
+                    Button("Obnovit") { checkCUPSStatus() }
+                        .controlSize(.small)
+                }
+            }
+
+            // MARK: Enable CUPS
+            Section("Zapnout CUPS") {
+                Text("Pokud CUPS není spuštěn, tisk nebude fungovat. Toto tlačítko ho načte a povolí jako systémovou službu.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Button("Zapnout CUPS") { enableCUPS() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.indigo)
+
+                    resultBadge(cupsEnableResult)
+                }
+            }
+
+            // MARK: MaxJobTime
+            Section("Opravit zaseknuté tiskové joby") {
+                Text("macOS CUPS někdy zastaví tiskový job před dokončením (výchozí časový limit). Nastavení MaxJobTime=0 odstraní tento limit — vhodné pro velké soubory a dávkový tisk.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Button("Nastavit MaxJobTime = 0") { fixMaxJobTime() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.indigo)
+
+                    resultBadge(maxJobTimeResult)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { checkCUPSStatus() }
+    }
+
+    @ViewBuilder
+    private func resultBadge(_ result: ActionResult) -> some View {
+        switch result {
+        case .idle:
+            EmptyView()
+        case .ok:
+            Label("OK", systemImage: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.caption)
+        case .failed(let msg):
+            Label(msg, systemImage: "xmark.circle.fill")
+                .foregroundColor(.red)
+                .font(.caption)
+                .lineLimit(2)
+        }
+    }
+
+    // MARK: - Actions
+
+    private func checkCUPSStatus() {
+        cupsStatus = .unknown
+        DispatchQueue.global().async {
+            let result = shell("launchctl list | grep -q org.cups.cupsd && echo running || echo stopped")
+            DispatchQueue.main.async {
+                cupsStatus = result.trimmingCharacters(in: .whitespacesAndNewlines) == "running" ? .running : .stopped
+            }
+        }
+    }
+
+    private func enableCUPS() {
+        let cmd = "launchctl load -w /System/Library/LaunchDaemons/org.cups.cupsd.plist"
+        runPrivileged(cmd) { success, error in
+            cupsEnableResult = success ? .ok : .failed(error ?? NSLocalizedString("Chyba", comment: ""))
+            if success { checkCUPSStatus() }
+        }
+    }
+
+    private func fixMaxJobTime() {
+        runPrivileged("cupsctl MaxJobTime=0") { success, error in
+            maxJobTimeResult = success ? .ok : .failed(error ?? NSLocalizedString("Chyba", comment: ""))
+        }
+    }
+
+    // Spustí příkaz bez oprávnění (jen čtení stavu)
+    @discardableResult
+    private func shell(_ command: String) -> String {
+        let task = Process()
+        task.launchPath = "/bin/zsh"
+        task.arguments = ["-c", command]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        try? task.run()
+        task.waitUntilExit()
+        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    }
+
+    // Spustí privilegovaný příkaz přes AppleScript (zobrazí macOS dialog pro heslo)
+    private func runPrivileged(_ command: String, completion: @escaping (Bool, String?) -> Void) {
+        DispatchQueue.global().async {
+            let escaped = command.replacingOccurrences(of: "\"", with: "\\\"")
+            let src = "do shell script \"\(escaped)\" with administrator privileges"
+            var error: NSDictionary?
+            NSAppleScript(source: src)?.executeAndReturnError(&error)
+            let success = error == nil
+            let msg = error?[NSAppleScript.errorBriefMessage] as? String
+            DispatchQueue.main.async { completion(success, msg) }
+        }
     }
 }
 
