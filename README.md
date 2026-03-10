@@ -8,6 +8,10 @@ A powerful macOS print management application built with SwiftUI, designed for p
 
 ---
 
+![Screenshot](screenshot.jpg)
+
+---
+
 ## Features
 
 ### File Management
