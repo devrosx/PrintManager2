@@ -20,21 +20,21 @@ class MenuBarManager: NSObject, ObservableObject {
         super.init()
     }
     
-    func setupMenuBar() {
+    func setupMenuBar(appState: AppState) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "printer.fill", accessibilityDescription: "Print Manager")
             button.action = #selector(togglePopover)
             button.target = self
         }
-        
+
         popover = NSPopover()
         popover?.contentSize = NSSize(width: 300, height: 400)
         popover?.behavior = .transient
         popover?.contentViewController = NSHostingController(
             rootView: MenuBarPopoverView()
-                .environmentObject(AppState())
+                .environmentObject(appState)
         )
     }
     
@@ -179,7 +179,7 @@ struct MenuBarPopoverView: View {
             // Footer
             HStack {
                 Button("Settings") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    appState.showSettings = true
                 }
                 .buttonStyle(.link)
                 

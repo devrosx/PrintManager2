@@ -2,24 +2,16 @@
 //  DrawingsDialog.swift
 //  PrintManager
 //
-//  Dialog pro hromadné zpracování naskenovaných technických výkresů.
-//  Preview je interaktivní — lze nakreslit ořez i oblast pro OCR přímo na obrázku.
+//  Dialog for batch processing of scanned technical drawings.
+//  Interactive preview allows drawing crop and OCR regions directly on the image.
 //
 
 import SwiftUI
 import AppKit
 
-// MARK: - Režim interakce s náhledem
+// MARK: - Helper Functions
 
-private enum PreviewMode: Equatable {
-    case none           // jen zobrazení
-    case cropDraw       // kreslení ořezu tažením
-    case ocrDraw        // kreslení oblasti OCR tažením
-}
-
-// MARK: - Pomocná funkce pro výpočet rámce obrázku
-
-/// Vrátí CGRect, ve kterém je obrázek skutečně zobrazen (aspect-fit) v zadaném kontejneru.
+/// Calculate the frame where an image is actually displayed (aspect-fit) within a container.
 private func imageDisplayFrame(container: CGSize, imageSize: CGSize) -> CGRect {
     guard imageSize.width > 0, imageSize.height > 0 else {
         return CGRect(origin: .zero, size: container)
@@ -39,33 +31,14 @@ private func imageDisplayFrame(container: CGSize, imageSize: CGSize) -> CGRect {
 struct DrawingsDialog: View {
     @Binding var isPresented: Bool
     @EnvironmentObject var appState: AppState
-
-    @State private var settings        = DrawingsSettings()
-    @State private var activeFileID: UUID? = nil
-    @State private var previewImage: NSImage? = nil
-    @State private var imageNaturalSize: CGSize = .zero
-    @State private var isLoadingPreview = false
-    @State private var previewTask: Task<Void, Never>? = nil
-    @State private var deskewTask: Task<Void, Never>? = nil
-    @State private var isProcessing    = false
-    @State private var detectedAngle: Double? = nil
-    @State private var isDetectingAngle = false
-    @State private var detectedCropRect: CGRect? = nil   // normalized top-left
-    @State private var isDetectingCrop  = false
-    @State private var ocrText = ""
-    @State private var isOCRRunning = false
-    @State private var previewMode: PreviewMode = .none
-    @State private var dragStart: CGPoint? = nil
-    @State private var dragCurrent: CGPoint? = nil
-
-    private let service = DrawingsService()
+    @StateObject private var viewModel = DrawingsDialogViewModel()
 
     private var selectedFiles: [FileItem] {
-        appState.files.filter { appState.selectedFiles.contains($0.id) }
+        viewModel.selectedFiles(from: appState)
     }
+
     private var activeFile: FileItem? {
-        guard let id = activeFileID else { return selectedFiles.first }
-        return selectedFiles.first { $0.id == id } ?? selectedFiles.first
+        viewModel.activeFile(from: appState)
     }
 
     // MARK: Body
@@ -86,119 +59,166 @@ struct DrawingsDialog: View {
         .frame(minWidth: 980, idealWidth: 1180, maxWidth: .infinity,
                minHeight: 680, idealHeight: 840, maxHeight: .infinity)
         .onAppear {
-            activeFileID = selectedFiles.first?.id
-            schedulePreviewUpdate()
+            viewModel.initialize(with: appState)
         }
-        .onChange(of: settings)      { _ in schedulePreviewUpdate() }
-        .onChange(of: activeFileID)  { _ in onFileChanged() }
-        .onChange(of: settings.applyDeskew) { e in
-            if e { startAngleDetection() } else { deskewTask?.cancel(); detectedAngle = nil; isDetectingAngle = false }
+        .onChange(of: viewModel.settings) { _ in
+            viewModel.schedulePreviewUpdate(appState: appState)
         }
-        .onChange(of: settings.applyCrop) { e in
-            if e && settings.cropMode == .autoDetect { startAutoCropDetection() }
+        .onChange(of: viewModel.activeFileID) { _ in
+            viewModel.onFileChanged(appState: appState)
         }
-        .onChange(of: settings.cropMode) { m in
-            if settings.applyCrop && m == .autoDetect { startAutoCropDetection() }
+        .onChange(of: viewModel.settings.applyDeskew) { enabled in
+            if enabled {
+                viewModel.startAngleDetection(appState: appState)
+            } else {
+                viewModel.stopAngleDetection()
+            }
+        }
+        .onChange(of: viewModel.settings.applyCrop) { enabled in
+            if enabled && viewModel.settings.cropMode == .autoDetect {
+                viewModel.startAutoCropDetection(appState: appState)
+            }
+        }
+        .onChange(of: viewModel.settings.cropMode) { mode in
+            if viewModel.settings.applyCrop && mode == .autoDetect {
+                viewModel.startAutoCropDetection(appState: appState)
+            }
+        }
+        .onDisappear {
+            viewModel.cleanup()
         }
     }
 
     // MARK: Header
 
     private var headerBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DS.Spacing.medium) {
             Image(systemName: "pencil.and.ruler").font(.title2).foregroundColor(.accentColor)
-            Text("Zpracování výkresů").font(.headline)
+            Text("Zpracování výkresů").font(DS.Typography.headline)
             Spacer()
-            if isProcessing {
+            if viewModel.isProcessing {
                 ProgressView().scaleEffect(0.7)
                 Text("Zpracovávám…").foregroundColor(.secondary).font(.subheadline)
             } else {
                 Text("\(selectedFiles.count) soubor(ů)").foregroundColor(.secondary).font(.subheadline)
             }
             Spacer()
-            Button("Zpracovat vše") { processAll() }
-                .buttonStyle(.borderedProminent)
-                .disabled(isProcessing || selectedFiles.isEmpty)
+            Button("Zpracovat vše") {
+                viewModel.processAll(appState: appState) {
+                    isPresented = false
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(viewModel.isProcessing || selectedFiles.isEmpty)
             Button("Zavřít") { isPresented = false }.buttonStyle(.bordered)
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .padding(.horizontal, DS.Spacing.large).padding(.vertical, DS.Spacing.smallMedium)
     }
 
-    // MARK: Seznam souborů
+    // MARK: File list
 
     private var fileList: some View {
         VStack(spacing: 0) {
-            Text("Soubory").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color(NSColor.controlBackgroundColor))
+            fileListHeader
             Divider()
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(selectedFiles) { file in
-                        DrawingsFileRow(file: file,
-                                        isActive: file.id == (activeFileID ?? selectedFiles.first?.id))
+            fileListContent
+        }
+        .background(DS.Colors.controlBackground)
+    }
+
+    private var fileListHeader: some View {
+        Text("Soubory").font(.caption.weight(.semibold)).foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .compactPadding()
+            .background(DS.Colors.controlBackground)
+    }
+
+    private var fileListContent: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(selectedFiles) { file in
+                    let isActive = file.id == (viewModel.activeFileID ?? selectedFiles.first?.id)
+                    DrawingsFileRow(file: file, isActive: isActive)
                         .contentShape(Rectangle())
-                        .onTapGesture { activeFileID = file.id }
-                        Divider()
-                    }
+                        .onTapGesture { viewModel.activeFileID = file.id }
+                    Divider()
                 }
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
     }
 
-    // MARK: Náhledová plocha s interaktivními překryvy
+    // MARK: Preview pane with interactive overlays
 
     private var previewPane: some View {
         ZStack {
             Color(NSColor.windowBackgroundColor)
-            if isLoadingPreview {
+            if viewModel.isLoadingPreview {
                 VStack(spacing: 8) {
                     ProgressView()
-                    Text(previewMode == .cropDraw ? "Nakresli ořez na obrázku…"
-                         : previewMode == .ocrDraw ? "Nakresli oblast OCR…"
-                         : "Načítám náhled…")
+                    Text(viewModel.previewMode == .ocrDraw ? "Nakresli oblast OCR…" : "Načítám náhled…")
                         .font(.caption).foregroundColor(.secondary)
                 }
-            } else if let img = previewImage {
+            } else if let img = viewModel.previewImage {
                 GeometryReader { geo in
-                    let imgFrame = imageDisplayFrame(container: geo.size, imageSize: imageNaturalSize)
+                    let imgFrame = imageDisplayFrame(container: geo.size, imageSize: viewModel.imageNaturalSize)
+                    let interactiveCrop = viewModel.isInteractiveCropActive
+                    let hasInteraction = interactiveCrop || viewModel.previewMode != .none
                     ZStack(alignment: .topLeading) {
-                        // ── Obrázek ──────────────────────────────────────────
                         Image(nsImage: img)
                             .resizable()
                             .interpolation(.high)
                             .aspectRatio(contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                        // ── Canvas s překryvy ─────────────────────────────────
                         Canvas { ctx, _ in
                             drawOverlay(ctx: &ctx, imgFrame: imgFrame)
                         }
 
-                        // ── Drag gesta (pouze v aktivním režimu) ──────────────
-                        if previewMode != .none {
+                        if hasInteraction {
                             Color.clear
                                 .contentShape(Rectangle())
                                 .gesture(
                                     DragGesture(minimumDistance: 2)
                                         .onChanged { v in
-                                            if dragStart == nil { dragStart = v.startLocation }
-                                            dragCurrent = v.location
+                                            if interactiveCrop && viewModel.previewMode == .none {
+                                                if viewModel.cropDragMode == .none {
+                                                    viewModel.handleCropDragStart(at: v.startLocation, imgFrame: imgFrame)
+                                                }
+                                                viewModel.handleCropDragChanged(to: v.location, imgFrame: imgFrame)
+                                            } else {
+                                                // OCR draw mode
+                                                if viewModel.dragStart == nil { viewModel.dragStart = v.startLocation }
+                                                viewModel.dragCurrent = v.location
+                                            }
                                         }
                                         .onEnded { v in
-                                            commitDrag(start: dragStart, end: v.location, imgFrame: imgFrame)
-                                            dragStart = nil; dragCurrent = nil
+                                            if interactiveCrop && viewModel.previewMode == .none {
+                                                viewModel.handleCropDragEnded(at: v.location, imgFrame: imgFrame)
+                                            } else {
+                                                viewModel.commitDrag(start: viewModel.dragStart, end: v.location, imgFrame: imgFrame)
+                                                viewModel.dragStart = nil; viewModel.dragCurrent = nil
+                                            }
                                         }
                                 )
                         }
                     }
-                    // Kurzor mění tvar při kreslení
-                    .cursor(previewMode != .none ? .crosshair : .arrow)
+                    .onContinuousHover { phase in
+                        guard interactiveCrop, viewModel.previewMode == .none else {
+                            NSCursor.arrow.set()
+                            return
+                        }
+                        switch phase {
+                        case .active(let pt):
+                            let mode = viewModel.cropCursorMode(at: pt, imgFrame: imgFrame)
+                            cursorForCropMode(mode).set()
+                        case .ended:
+                            NSCursor.arrow.set()
+                        }
+                    }
+                    .cursor(viewModel.previewMode == .ocrDraw ? .crosshair : .arrow)
                 }
-                .onAppear { imageNaturalSize = img.size }
-                .onChange(of: previewImage) { ni in imageNaturalSize = ni?.size ?? .zero }
+                .onAppear { viewModel.imageNaturalSize = img.size }
+                .onChange(of: viewModel.previewImage) { ni in viewModel.imageNaturalSize = ni?.size ?? .zero }
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: selectedFiles.isEmpty ? "tray" : "doc.richtext")
@@ -208,43 +228,54 @@ struct DrawingsDialog: View {
                 }
             }
 
-            // Nápověda při aktivním kreslení
-            if previewMode != .none {
+            if viewModel.previewMode == .ocrDraw {
                 VStack {
                     Spacer()
                     HStack {
                         Image(systemName: "hand.draw")
-                        Text(previewMode == .cropDraw
-                             ? "Táhni pro definici ořezu — Esc pro zrušení"
-                             : "Táhni pro definici oblasti OCR — Esc pro zrušení")
+                        Text("Táhni pro definici oblasti OCR — Esc pro zrušení")
                         .font(.caption)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Color.black.opacity(0.55))
-                    .cornerRadius(6)
-                    .padding(.bottom, 8)
+                    .cornerRadius(DS.Radius.small)
+                    .padding(.bottom, DS.Spacing.small)
                 }
-                .onExitCommand { previewMode = .none; dragStart = nil; dragCurrent = nil }
+                .onExitCommand { viewModel.previewMode = .none; viewModel.dragStart = nil; viewModel.dragCurrent = nil }
             }
         }
     }
 
-    /// Kreslí překryvy do Canvas — crop, auto-crop detekce, OCR oblast, drag-rect.
+    /// Map CropDragMode to appropriate NSCursor
+    private func cursorForCropMode(_ mode: CropDragMode) -> NSCursor {
+        switch mode {
+        case .none:                          return .arrow
+        case .move:                          return .openHand
+        case .resizeTop, .resizeBottom:      return .resizeUpDown
+        case .resizeLeft, .resizeRight:      return .resizeLeftRight
+        case .resizeTopLeft, .resizeBottomRight:
+            return NSCursor(image: NSCursor.arrow.image, hotSpot: .zero) // diagonal NWSE — fallback to crosshair
+        case .resizeTopRight, .resizeBottomLeft:
+            return NSCursor(image: NSCursor.arrow.image, hotSpot: .zero) // diagonal NESW — fallback to crosshair
+        case .drawNew:                       return .crosshair
+        }
+    }
+
+    /// Draw overlays into Canvas — crop, auto-crop detection, OCR region, drag-rect.
     private func drawOverlay(ctx: inout GraphicsContext, imgFrame: CGRect) {
-        // 1. Manuální ořez
-        if settings.applyCrop, settings.cropMode == .manualMargins {
-            let kept = CGRect(
-                x: imgFrame.minX + settings.cropLeftMargin   * imgFrame.width,
-                y: imgFrame.minY + settings.cropTopMargin    * imgFrame.height,
-                width:  imgFrame.width  * (1 - settings.cropLeftMargin - settings.cropRightMargin),
-                height: imgFrame.height * (1 - settings.cropTopMargin  - settings.cropBottomMargin)
-            )
-            // Tmavé okraje
+        // 1. Manual crop margins — interactive Photoshop-style crop
+        if viewModel.settings.applyCrop, viewModel.settings.cropMode == .manualMargins {
+            let kept = viewModel.currentCropRect(in: imgFrame)
+
+            // Dark overlay outside crop
             var mask = Path(); mask.addRect(imgFrame); mask.addRect(kept)
-            ctx.fill(mask, with: .color(.black.opacity(0.45)), style: .init(eoFill: true))
-            // Bílý rámeček + pravidlo třetin
+            ctx.fill(mask, with: .color(.black.opacity(0.5)), style: .init(eoFill: true))
+
+            // Crop border
             ctx.stroke(Path(kept), with: .color(.white), lineWidth: 1.5)
+
+            // Rule of thirds grid
             let dashes = StrokeStyle(lineWidth: 0.5, dash: [4, 4])
             ctx.stroke(Path { p in
                 p.move(to: .init(x: kept.minX + kept.width/3, y: kept.minY))
@@ -256,18 +287,37 @@ struct DrawingsDialog: View {
                 p.move(to: .init(x: kept.minX, y: kept.minY + 2*kept.height/3))
                 p.addLine(to: .init(x: kept.maxX, y: kept.minY + 2*kept.height/3))
             }, with: .color(.white.opacity(0.4)), style: dashes)
-            // Rohové úchyty (L-tvar)
-            for corner in cornerHandlePoints(of: kept) {
-                ctx.stroke(Path(CGRect(x: corner.x - 5, y: corner.y - 5, width: 10, height: 10)),
-                           with: .color(.white), lineWidth: 2)
+
+            // 8 drag handles: 4 corners (8×8) + 4 edge midpoints (6×6)
+            let corners: [CGPoint] = [
+                CGPoint(x: kept.minX, y: kept.minY),
+                CGPoint(x: kept.maxX, y: kept.minY),
+                CGPoint(x: kept.minX, y: kept.maxY),
+                CGPoint(x: kept.maxX, y: kept.maxY),
+            ]
+            let edges: [CGPoint] = [
+                CGPoint(x: kept.midX, y: kept.minY),
+                CGPoint(x: kept.midX, y: kept.maxY),
+                CGPoint(x: kept.minX, y: kept.midY),
+                CGPoint(x: kept.maxX, y: kept.midY),
+            ]
+            for c in corners {
+                let r = CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8)
+                ctx.fill(Path(r), with: .color(.white))
+                ctx.stroke(Path(r), with: .color(.gray.opacity(0.6)), lineWidth: 1)
+            }
+            for e in edges {
+                let r = CGRect(x: e.x - 3, y: e.y - 3, width: 6, height: 6)
+                ctx.fill(Path(r), with: .color(.white))
+                ctx.stroke(Path(r), with: .color(.gray.opacity(0.6)), lineWidth: 1)
             }
         }
 
-        // 2. Auto-crop detekovaný obdélník
-        if settings.applyCrop, settings.cropMode == .autoDetect {
-            if isDetectingCrop {
-                // nic
-            } else if let r = detectedCropRect {
+        // 2. Auto-crop detected rectangle
+        if viewModel.settings.applyCrop, viewModel.settings.cropMode == .autoDetect {
+            if viewModel.isDetectingCrop {
+                // waiting
+            } else if let r = viewModel.detectedCropRect {
                 let detected = CGRect(
                     x: imgFrame.minX + r.minX * imgFrame.width,
                     y: imgFrame.minY + r.minY * imgFrame.height,
@@ -276,82 +326,84 @@ struct DrawingsDialog: View {
                 )
                 ctx.stroke(Path(detected), with: .color(.green.opacity(0.9)),
                            style: StrokeStyle(lineWidth: 2, dash: [6, 3]))
-                // Tmavé okraje
                 var mask = Path(); mask.addRect(imgFrame); mask.addRect(detected)
                 ctx.fill(mask, with: .color(.black.opacity(0.3)), style: .init(eoFill: true))
             }
         }
 
-        // 3. OCR oblast
-        if settings.applyOCR && settings.ocrUseCustomRegion {
+        // 3. OCR region
+        if viewModel.settings.applyOCR && viewModel.settings.ocrUseCustomRegion {
             let ocrRect = CGRect(
-                x: imgFrame.minX + settings.ocrRegionLeft   * imgFrame.width,
-                y: imgFrame.minY + settings.ocrRegionTop    * imgFrame.height,
-                width: settings.ocrRegionWidth  * imgFrame.width,
-                height: settings.ocrRegionHeight * imgFrame.height
+                x: imgFrame.minX + viewModel.settings.ocrRegionLeft   * imgFrame.width,
+                y: imgFrame.minY + viewModel.settings.ocrRegionTop    * imgFrame.height,
+                width: viewModel.settings.ocrRegionWidth  * imgFrame.width,
+                height: viewModel.settings.ocrRegionHeight * imgFrame.height
             )
             ctx.stroke(Path(ocrRect), with: .color(.blue.opacity(0.85)),
                        style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
             ctx.fill(Path(ocrRect), with: .color(.blue.opacity(0.07)))
         }
 
-        // 4. Drag-rect aktuálně kreslený
-        if let s = dragStart, let e = dragCurrent {
+        // 4. Currently drawn drag-rect (OCR draw or crop drawNew)
+        if let s = viewModel.dragStart, let e = viewModel.dragCurrent {
             let dr = CGRect(x: min(s.x,e.x), y: min(s.y,e.y),
                             width: abs(e.x-s.x), height: abs(e.y-s.y))
-            let col: Color = previewMode == .ocrDraw ? .blue : .yellow
+            let col: Color = viewModel.previewMode == .ocrDraw ? .blue : .yellow
             ctx.stroke(Path(dr), with: .color(col.opacity(0.9)),
                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-            ctx.fill(Path(dr), with: .color(col.opacity(0.08)))
+            ctx.fill(Path(dr), with: .color(col.opacity(0.12)))
         }
     }
 
-    private func cornerHandlePoints(of r: CGRect) -> [CGPoint] {
-        [r.origin, CGPoint(x: r.maxX, y: r.minY),
-         CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.maxX, y: r.maxY)]
-    }
 
-    // MARK: Nastavení (sekce)
+    // MARK: Settings pane
 
     private var settingsPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
 
-                // Práh a kontrast
+                // Threshold and contrast
                 DisclosureToggleSection(title: "Práh a kontrast", icon: "circle.lefthalf.filled",
-                                        isEnabled: $settings.applyThreshold) {
+                                        isEnabled: $viewModel.settings.applyThreshold) {
                     HStack {
                         Text("Režim"); Spacer()
-                        Picker("", selection: $settings.thresholdMode) {
+                        Picker("", selection: $viewModel.settings.thresholdMode) {
                             Text("Automaticky").tag(ThresholdMode.auto)
                             Text("Ručně").tag(ThresholdMode.manual)
                         }
                         .pickerStyle(.segmented).frame(width: 190)
                     }
-                    if settings.thresholdMode == .manual {
-                        LabeledSlider(label: "Práh", value: $settings.thresholdValue, range: 0...1, format: "%.2f")
+                    if viewModel.settings.thresholdMode == .manual {
+                        LabeledSlider(label: "Práh", value: $viewModel.settings.thresholdValue, range: 0...1, format: "%.2f")
                     }
-                    LabeledSlider(label: "Jas",      value: $settings.brightnessBoost, range: -0.5...0.5, format: "%+.2f")
-                    LabeledSlider(label: "Kontrast", value: $settings.contrastBoost,   range: 0...1,      format: "%.2f")
+                    LabeledSlider(label: "Jas",      value: $viewModel.settings.brightnessBoost, range: -0.5...0.5, format: "%+.2f")
+                    LabeledSlider(label: "Kontrast", value: $viewModel.settings.contrastBoost,   range: 0...1,      format: "%.2f")
                 }
 
-                // Ořez
-                DisclosureToggleSection(title: "Ořez", icon: "crop", isEnabled: $settings.applyCrop) {
+                // Crop
+                DisclosureToggleSection(title: "Ořez", icon: "crop", isEnabled: $viewModel.settings.applyCrop) {
                     HStack {
                         Text("Metoda"); Spacer()
-                        Picker("", selection: $settings.cropMode) {
+                        Picker("", selection: $viewModel.settings.cropMode) {
                             ForEach(CropMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented).frame(width: 210)
                     }
 
-                    if settings.cropMode == .autoDetect {
-                        // Stav detekce
+                    if viewModel.settings.cropMode == .autoDetect {
+                        HStack {
+                            Text("Citlivost").font(.caption)
+                            Slider(value: $viewModel.settings.cropSensitivity, in: 0...1)
+                            Text(String(format: "%.0f%%", viewModel.settings.cropSensitivity * 100))
+                                .font(.caption).monospacedDigit()
+                                .frame(width: 35)
+                        }
+
                         HStack(spacing: 6) {
-                            if isDetectingCrop {
+                            if viewModel.isDetectingCrop {
                                 ProgressView().scaleEffect(0.7)
                                 Text("Detekuji hrany…").foregroundColor(.secondary)
-                            } else if detectedCropRect != nil {
+                            } else if viewModel.detectedCropRect != nil {
                                 Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
                                 Text("Obdélník nalezen — zobrazen v náhledu zeleně")
                             } else {
@@ -360,33 +412,29 @@ struct DrawingsDialog: View {
                             }
                         }
                         .font(.caption)
-                        Button("Znovu detekovat") { startAutoCropDetection() }
-                            .disabled(isDetectingCrop || activeFile == nil)
+                        Button("Znovu detekovat") { viewModel.startAutoCropDetection(appState: appState) }
+                            .disabled(viewModel.isDetectingCrop || activeFile == nil)
 
                     } else {
-                        // Manuální — slidery + tlačítko pro kreslení
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
-                                LabeledSlider(label: "Horní", value: $settings.cropTopMargin,    range: 0...0.49, format: "%.0f%%", mult: 100)
-                                LabeledSlider(label: "Dolní", value: $settings.cropBottomMargin, range: 0...0.49, format: "%.0f%%", mult: 100)
-                                LabeledSlider(label: "Levý",  value: $settings.cropLeftMargin,   range: 0...0.49, format: "%.0f%%", mult: 100)
-                                LabeledSlider(label: "Pravý", value: $settings.cropRightMargin,  range: 0...0.49, format: "%.0f%%", mult: 100)
+                                LabeledSlider(label: "Horní", value: $viewModel.settings.cropTopMargin,    range: 0...0.49, format: "%.0f%%", mult: 100)
+                                LabeledSlider(label: "Dolní", value: $viewModel.settings.cropBottomMargin, range: 0...0.49, format: "%.0f%%", mult: 100)
+                                LabeledSlider(label: "Levý",  value: $viewModel.settings.cropLeftMargin,   range: 0...0.49, format: "%.0f%%", mult: 100)
+                                LabeledSlider(label: "Pravý", value: $viewModel.settings.cropRightMargin,  range: 0...0.49, format: "%.0f%%", mult: 100)
                             }
                         }
-                        Button(previewMode == .cropDraw ? "Kreslím… (Esc pro zrušení)" : "Nakreslit ořez na obrázku") {
-                            if previewMode == .cropDraw { previewMode = .none } else { previewMode = .cropDraw }
-                        }
-                        .buttonStyle(.bordered)
-                        .foregroundColor(previewMode == .cropDraw ? .orange : .accentColor)
+                        Text("Táhni za úchyty v náhledu pro úpravu ořezu")
+                            .font(.caption).foregroundColor(.secondary)
                     }
                 }
 
-                // Narovnání (Deskew)
+                // Deskew
                 DisclosureToggleSection(title: "Narovnání (Deskew)", icon: "perspective",
-                                        isEnabled: $settings.applyDeskew) {
-                    if isDetectingAngle {
+                                        isEnabled: $viewModel.settings.applyDeskew) {
+                    if viewModel.isDetectingAngle {
                         HStack(spacing: 6) { ProgressView().scaleEffect(0.7); Text("Detekuji úhel…").foregroundColor(.secondary) }
-                    } else if let a = detectedAngle {
+                    } else if let a = viewModel.detectedAngle {
                         HStack(spacing: 6) {
                             Image(systemName: abs(a) < 0.3 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                 .foregroundColor(abs(a) < 0.3 ? .green : .orange)
@@ -396,256 +444,97 @@ struct DrawingsDialog: View {
                     } else {
                         Text("Úhel bude detekován při zpracování.").foregroundColor(.secondary).font(.caption)
                     }
-                    Toggle("Oříznout černé rohy po narovnání", isOn: $settings.deskewWithCrop)
+                    Toggle("Oříznout černé rohy po narovnání", isOn: $viewModel.settings.deskewWithCrop)
                 }
 
-                // Otočení
-                DisclosureToggleSection(title: "Otočení", icon: "rotate.right", isEnabled: $settings.applyRotation) {
+                // Rotation
+                DisclosureToggleSection(title: "Otočení", icon: "rotate.right", isEnabled: $viewModel.settings.applyRotation) {
                     HStack {
                         Text("Směr"); Spacer()
-                        Picker("", selection: $settings.rotationSteps) {
+                        Picker("", selection: $viewModel.settings.rotationSteps) {
                             Text("↺ 90° CCW").tag(-1); Text("180°").tag(2); Text("↻ 90° CW").tag(1)
                         }
                         .pickerStyle(.segmented).frame(width: 230)
                     }
                 }
 
-                // Zarovnání na formát
+                // Alignment to paper format
                 DisclosureToggleSection(title: "Zarovnání na formát", icon: "doc.richtext",
-                                        isEnabled: $settings.applyAlignment) {
+                                        isEnabled: $viewModel.settings.applyAlignment) {
                     HStack {
                         Text("Formát"); Spacer()
-                        Picker("", selection: $settings.alignmentFormat) {
+                        Picker("", selection: $viewModel.settings.alignmentFormat) {
                             ForEach(PaperFormat.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.frame(width: 110)
                     }
                     HStack {
                         Text("Režim"); Spacer()
-                        Picker("", selection: $settings.alignmentMode) {
+                        Picker("", selection: $viewModel.settings.alignmentMode) {
                             ForEach(AlignmentMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.pickerStyle(.segmented).frame(width: 150)
                     }
                 }
 
-                // Převod barev
+                // Color conversion
                 DisclosureToggleSection(title: "Převod barev", icon: "paintpalette",
-                                        isEnabled: $settings.applyColorConversion) {
+                                        isEnabled: $viewModel.settings.applyColorConversion) {
                     HStack {
                         Text("Výstup"); Spacer()
-                        Picker("", selection: $settings.colorMode) {
+                        Picker("", selection: $viewModel.settings.colorMode) {
                             ForEach(ColorMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.pickerStyle(.segmented).frame(width: 270)
                     }
                 }
 
-                // Odstranění šumu
+                // Noise reduction
                 DisclosureToggleSection(title: "Odstranění šumu", icon: "wand.and.sparkles",
-                                        isEnabled: $settings.applyNoiseReduction) {
-                    LabeledSlider(label: "Intenzita", value: $settings.noiseLevel,    range: 0...0.1, format: "%.3f")
-                    LabeledSlider(label: "Ostrost",   value: $settings.noiseSharpness, range: 0...2,   format: "%.2f")
+                                        isEnabled: $viewModel.settings.applyNoiseReduction) {
+                    LabeledSlider(label: "Intenzita", value: $viewModel.settings.noiseLevel,    range: 0...0.1, format: "%.3f")
+                    LabeledSlider(label: "Ostrost",   value: $viewModel.settings.noiseSharpness, range: 0...2,   format: "%.2f")
                 }
 
-                // OCR razítko
+                // OCR stamp
                 DisclosureToggleSection(title: "OCR razítko", icon: "text.viewfinder",
-                                        isEnabled: $settings.applyOCR) {
-                    // Oblast
-                    Toggle("Vlastní oblast", isOn: $settings.ocrUseCustomRegion)
-                    if settings.ocrUseCustomRegion {
+                                        isEnabled: $viewModel.settings.applyOCR) {
+                    Toggle("Vlastní oblast", isOn: $viewModel.settings.ocrUseCustomRegion)
+                    if viewModel.settings.ocrUseCustomRegion {
                         HStack(spacing: 8) {
-                            Button(previewMode == .ocrDraw ? "Kreslím… (Esc)" : "Nakreslit oblast na obrázku") {
-                                if previewMode == .ocrDraw { previewMode = .none } else { previewMode = .ocrDraw }
+                            Button(viewModel.previewMode == .ocrDraw ? "Kreslím… (Esc)" : "Nakreslit oblast na obrázku") {
+                                if viewModel.previewMode == .ocrDraw { viewModel.previewMode = .none } else { viewModel.previewMode = .ocrDraw }
                             }
                             .buttonStyle(.bordered)
-                            .foregroundColor(previewMode == .ocrDraw ? .orange : .accentColor)
+                            .foregroundColor(viewModel.previewMode == .ocrDraw ? .orange : .accentColor)
 
                             Button("Reset") {
-                                settings.ocrRegionLeft = 0.75; settings.ocrRegionTop = 0.75
-                                settings.ocrRegionWidth = 0.25; settings.ocrRegionHeight = 0.25
+                                viewModel.settings.ocrRegionLeft = 0.75; viewModel.settings.ocrRegionTop = 0.75
+                                viewModel.settings.ocrRegionWidth = 0.25; viewModel.settings.ocrRegionHeight = 0.25
                             }
                             .buttonStyle(.bordered)
                         }
-                        // Mini-indikátor aktuální oblasti
-                        Text("Oblast: \(Int(settings.ocrRegionLeft*100))% zleva, "
-                             + "\(Int(settings.ocrRegionTop*100))% shora, "
-                             + "\(Int(settings.ocrRegionWidth*100))×\(Int(settings.ocrRegionHeight*100))%")
+                        Text("Oblast: \(Int(viewModel.settings.ocrRegionLeft*100))% zleva, "
+                             + "\(Int(viewModel.settings.ocrRegionTop*100))% shora, "
+                             + "\(Int(viewModel.settings.ocrRegionWidth*100))×\(Int(viewModel.settings.ocrRegionHeight*100))%")
                             .font(.caption).foregroundColor(.secondary)
                     } else {
                         Text("Výchozí: pravý dolní roh (25×25 %)").font(.caption).foregroundColor(.secondary)
                     }
 
-                    // OCR akce
-                    Button(isOCRRunning ? "Čtu text…" : "Načíst text z označené oblasti") { runOCR() }
-                        .disabled(isOCRRunning || activeFile == nil)
+                    Button(viewModel.isOCRRunning ? "Čtu text…" : "Načíst text z označené oblasti") { viewModel.runOCR(appState: appState) }
+                        .disabled(viewModel.isOCRRunning || activeFile == nil)
 
-                    if !ocrText.isEmpty {
-                        TextEditor(text: $ocrText)
+                    if !viewModel.ocrText.isEmpty {
+                        TextEditor(text: $viewModel.ocrText)
                             .font(.system(.caption, design: .monospaced))
                             .frame(minHeight: 55, maxHeight: 90)
                             .border(Color(NSColor.separatorColor))
-                        Button("Přejmenovat soubor dle textu") { renameActiveFile() }
-                            .disabled(ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Přejmenovat soubor dle textu") { viewModel.renameActiveFile(appState: appState) }
+                            .disabled(viewModel.ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
 
                 Spacer(minLength: 8)
             }
             .padding(10)
-        }
-    }
-
-    // MARK: Commit drag
-
-    private func commitDrag(start: CGPoint?, end: CGPoint, imgFrame: CGRect) {
-        guard let s = start else { return }
-        // Normalizace do image coordinates (0-1), oříznutí na hranice obrázku
-        func norm(_ v: CGFloat, origin: CGFloat, size: CGFloat) -> Double {
-            Double(Swift.max(0, Swift.min(1, (v - origin) / size)))
-        }
-        let nx1 = norm(Swift.min(s.x, end.x), origin: imgFrame.minX, size: imgFrame.width)
-        let nx2 = norm(Swift.max(s.x, end.x), origin: imgFrame.minX, size: imgFrame.width)
-        let ny1 = norm(Swift.min(s.y, end.y), origin: imgFrame.minY, size: imgFrame.height)
-        let ny2 = norm(Swift.max(s.y, end.y), origin: imgFrame.minY, size: imgFrame.height)
-        guard nx2 - nx1 > 0.02, ny2 - ny1 > 0.02 else { previewMode = .none; return }
-
-        switch previewMode {
-        case .cropDraw:
-            settings.cropLeftMargin   = nx1
-            settings.cropTopMargin    = ny1
-            settings.cropRightMargin  = 1 - nx2
-            settings.cropBottomMargin = 1 - ny2
-            previewMode = .none
-        case .ocrDraw:
-            settings.ocrRegionLeft    = nx1
-            settings.ocrRegionTop     = ny1
-            settings.ocrRegionWidth   = nx2 - nx1
-            settings.ocrRegionHeight  = ny2 - ny1
-            settings.ocrUseCustomRegion = true
-            previewMode = .none
-        default: break
-        }
-    }
-
-    // MARK: Live preview
-
-    private func schedulePreviewUpdate() {
-        previewTask?.cancel()
-        guard let file = activeFile else { isLoadingPreview = false; previewImage = nil; return }
-        isLoadingPreview = true
-        previewTask = Task {
-            do {
-                try await Task.sleep(nanoseconds: 300_000_000)
-                guard !Task.isCancelled else { await MainActor.run { isLoadingPreview = false }; return }
-                let img = try await service.previewImage(url: file.url, settings: settings,
-                                                         maxSize: CGSize(width: 1600, height: 1600))
-                await MainActor.run { previewImage = img; isLoadingPreview = false }
-            } catch is CancellationError {
-                await MainActor.run { isLoadingPreview = false }
-            } catch {
-                await MainActor.run { previewImage = nil; isLoadingPreview = false }
-            }
-        }
-    }
-
-    private func onFileChanged() {
-        detectedAngle = nil; detectedCropRect = nil; ocrText = ""
-        schedulePreviewUpdate()
-        if settings.applyDeskew { startAngleDetection() }
-        if settings.applyCrop && settings.cropMode == .autoDetect { startAutoCropDetection() }
-    }
-
-    // MARK: Detekce úhlu
-
-    private func startAngleDetection() {
-        deskewTask?.cancel()
-        guard let file = activeFile else { return }
-        detectedAngle = nil; isDetectingAngle = true
-        deskewTask = Task {
-            defer { Task { await MainActor.run { isDetectingAngle = false } } }
-            guard !Task.isCancelled,
-                  let src = CGImageSourceCreateWithURL(file.url as CFURL, nil),
-                  let cg  = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
-                await MainActor.run { detectedAngle = 0.0 }; return
-            }
-            let angle = (try? await service.detectDeskewAngle(cgImage: cg)) ?? 0.0
-            await MainActor.run { if !Task.isCancelled { detectedAngle = angle } }
-        }
-    }
-
-    // MARK: Auto-crop detekce
-
-    private func startAutoCropDetection() {
-        guard let file = activeFile else { return }
-        detectedCropRect = nil; isDetectingCrop = true
-        Task {
-            guard let src = CGImageSourceCreateWithURL(file.url as CFURL, nil),
-                  let cg  = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
-                await MainActor.run { isDetectingCrop = false }; return
-            }
-            let rect = await service.detectDocumentRect(cgImage: cg)
-            await MainActor.run { detectedCropRect = rect; isDetectingCrop = false }
-        }
-    }
-
-    // MARK: OCR
-
-    private func runOCR() {
-        guard let file = activeFile else { return }
-        isOCRRunning = true; ocrText = ""
-        Task {
-            do {
-                guard let src = CGImageSourceCreateWithURL(file.url as CFURL, nil),
-                      let cg  = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
-                    await MainActor.run { isOCRRunning = false }; return
-                }
-                let roi: CGRect? = settings.ocrUseCustomRegion
-                    ? CGRect(x: settings.ocrRegionLeft,  y: settings.ocrRegionTop,
-                             width: settings.ocrRegionWidth, height: settings.ocrRegionHeight)
-                    : nil
-                let text = try await service.ocrBottomRight(cgImage: cg, regionOfInterest: roi)
-                await MainActor.run { ocrText = text; isOCRRunning = false }
-            } catch {
-                await MainActor.run {
-                    isOCRRunning = false
-                    appState.logError("OCR selhalo: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    // MARK: Přejmenování
-
-    private func renameActiveFile() {
-        guard let file = activeFile else { return }
-        let name = ocrText.components(separatedBy: .newlines).first?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-") ?? ""
-        guard !name.isEmpty else { return }
-        appState.renameFile(file, to: name)
-        appState.logSuccess("Přejmenováno: \(name)")
-    }
-
-    // MARK: Hromadné zpracování
-
-    private func processAll() {
-        let files = selectedFiles; guard !files.isEmpty else { return }
-        isProcessing = true
-        appState.logInfo("Začínám zpracování \(files.count) výkres(ů)…")
-        Task {
-            for (i, file) in files.enumerated() {
-                await MainActor.run { appState.logInfo("Výkres \(i+1)/\(files.count): \(file.name)") }
-                do {
-                    try await service.process(url: file.url, settings: settings)
-                    await MainActor.run {
-                        if let idx = appState.files.firstIndex(where: { $0.id == file.id }) {
-                            appState.files[idx].contentVersion += 1
-                        }
-                    }
-                } catch {
-                    await MainActor.run { appState.logError("Chyba (\(file.name)): \(error.localizedDescription)") }
-                }
-            }
-            await MainActor.run { isProcessing = false; appState.logSuccess("Zpracování výkresů dokončeno"); isPresented = false }
         }
     }
 }
@@ -658,7 +547,7 @@ private struct DrawingsFileRow: View {
         HStack(spacing: 8) {
             if let t = file.thumbnail {
                 Image(nsImage: t).resizable().aspectRatio(contentMode: .fit)
-                    .frame(width: 34, height: 34).cornerRadius(3)
+                    .frame(width: 34, height: 34).cornerRadius(DS.Radius.small)
             } else {
                 Image(systemName: file.fileType.icon).foregroundColor(file.fileType.listColor)
                     .frame(width: 34, height: 34)
@@ -670,88 +559,7 @@ private struct DrawingsFileRow: View {
             Spacer()
             if isActive { Image(systemName: "chevron.right").foregroundColor(.accentColor).font(.caption.weight(.semibold)) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        .compactPadding()
         .background(isActive ? Color.accentColor.opacity(0.10) : Color.clear)
     }
-}
-
-// MARK: - DisclosureToggleSection
-
-struct DisclosureToggleSection<Content: View>: View {
-    let title: String; let icon: String
-    @Binding var isEnabled: Bool
-    @State private var isExpanded = false
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Toggle("", isOn: $isEnabled).toggleStyle(.checkbox).labelsHidden()
-                    .padding(.leading, 10).padding(.trailing, 8)
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: icon).foregroundColor(isEnabled ? .accentColor : .secondary).frame(width: 16)
-                        Text(title).font(.system(.body, weight: .medium))
-                            .foregroundColor(isEnabled ? .primary : .secondary)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .animation(.easeInOut(duration: 0.18), value: isExpanded)
-                    }
-                    .padding(.trailing, 10).padding(.vertical, 9).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            if isExpanded {
-                Divider().padding(.horizontal, 8)
-                VStack(alignment: .leading, spacing: 8) { content() }
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .opacity(isEnabled ? 1.0 : 0.45)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(
-                    isEnabled ? Color.accentColor.opacity(0.35) : Color(NSColor.separatorColor),
-                    lineWidth: isEnabled ? 1.0 : 0.5))
-        )
-        .onChange(of: isEnabled) { e in
-            if e, !isExpanded { withAnimation(.easeInOut(duration: 0.18)) { isExpanded = true } }
-        }
-    }
-}
-
-// MARK: - LabeledSlider
-
-private struct LabeledSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let format: String
-    var mult: Double = 1.0
-
-    var body: some View {
-        HStack {
-            Text(label).frame(width: 72, alignment: .leading)
-            Slider(value: $value, in: range)
-            Text(String(format: format, value * mult))
-                .font(.system(.caption, design: .monospaced)).frame(width: 44, alignment: .trailing)
-        }
-    }
-}
-
-// MARK: - Cursor helper
-
-private struct CursorModifier: ViewModifier {
-    let cursor: NSCursor
-    func body(content: Content) -> some View {
-        content.onHover { inside in inside ? cursor.push() : NSCursor.pop() }
-    }
-}
-private extension View {
-    func cursor(_ c: NSCursor) -> some View { modifier(CursorModifier(cursor: c)) }
 }

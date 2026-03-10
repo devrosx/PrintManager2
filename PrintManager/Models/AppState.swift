@@ -13,6 +13,28 @@ import Combine
 import Compression
 import UserNotifications
 
+// MARK: - QuickLook Mode
+
+enum QuickLookMode {
+    case thumbnails
+    case singlePage
+}
+
+// MARK: - File List Column & Sort
+
+enum FileListColumn: String, CaseIterable, Codable {
+    case size      = "Size"
+    case kind      = "Kind"
+    case fileSize  = "File size"
+    case pages     = "Pages"
+    case colors    = "Colors"
+    case converted = "Converted"
+}
+
+enum FileSortKey: String, Codable {
+    case name, size, kind, fileSize, pages, colors
+}
+
 // MARK: - ExternalApp Model
 
 struct ExternalApp: Identifiable, Codable {
@@ -30,8 +52,17 @@ struct ExternalApp: Identifiable, Codable {
 
 class AppState: ObservableObject {
     // File management
-    @Published var files: [FileItem] = []
+    @Published var files: [FileItem] = [] {
+        didSet {
+            let count = files.count
+            DispatchQueue.main.async {
+                NSApp.dockTile.badgeLabel = count == 0 ? nil : "\(count)"
+                NSApp.dockTile.display()
+            }
+        }
+    }
     @Published var selectedFiles: Set<UUID> = []
+    @Published var rangeAnchorID: UUID? = nil
     @Published var showingFilePicker = false
 
     // External Apps
@@ -41,6 +72,7 @@ class AppState: ObservableObject {
     @Published var selectedPrinter: String = ""
     @Published var selectedPreset: String? = nil
     @Published var availableSystemPresets: [SystemPrinterPreset] = []
+    @Published var systemPresetsFilePath: URL? = nil
     @Published var printCopies: Int = 1
     @Published var printTwoSided: Bool = false
     @Published var printCollate: Bool = true
@@ -65,12 +97,19 @@ class AppState: ObservableObject {
     @Published var showColorPageSelector = false
     @Published var colorPageSelectorFile: FileItem?
 
+    // Imposition
+    @Published var showingImpositionDialog = false
+    @Published var impositionSourceFile: FileItem?
+
     // Batch Rename
     @Published var showBatchRename = false
 
     // Rename
     @Published var editingFileID: UUID? = nil
     
+    // Settings
+    @Published var showSettings = false
+
     // Compression
     @Published var showCompressionWindow = false
     @Published var compressionSettings = CompressionSettings()
@@ -81,11 +120,22 @@ class AppState: ObservableObject {
     // PDF metadata cache — sdílený mezi CompactFileMetadata a FilePricePanel
     @Published var pdfMetadataCache: [UUID: PDFMetadata] = [:]
     private var loadingMetadataIDs: Set<UUID> = []
+    /// ID souborů, pro které GS analýza barev již proběhla (nebo proběhla chyba)
+    private var colorAnalysisComplete: Set<UUID> = []
 
+    /// Načte základní metadata PDF + spustí GS analýzu barev.
+    /// Přeskočí pouze pokud obojí je již hotovo.
     func loadPDFMetadataIfNeeded(for file: FileItem) {
         guard file.fileType == .pdf,
-              pdfMetadataCache[file.id] == nil,
               !loadingMetadataIDs.contains(file.id) else { return }
+
+        if pdfMetadataCache[file.id] != nil {
+            // Základní metadata jsou v cache – zkontroluj jen GS analýzu
+            ensureColorAnalysis(for: file)
+            return
+        }
+
+        // Načti základní metadata + spusť GS analýzu
         loadingMetadataIDs.insert(file.id)
         let url = file.url
         let id  = file.id
@@ -97,18 +147,69 @@ class AppState: ObservableObject {
             }
             DispatchQueue.main.async { self.pdfMetadataCache[id] = metadata }
             guard PageColorAnalyzer.shared.isGSAvailable else {
-                DispatchQueue.main.async { self.loadingMetadataIDs.remove(id) }
+                DispatchQueue.main.async {
+                    self.loadingMetadataIDs.remove(id)
+                    self.colorAnalysisComplete.insert(id)
+                }
                 return
             }
             PageColorAnalyzer.shared.analyzePDF(at: url) { result in
                 if case .success(let colorInfo) = result {
-                    metadata.colorPageCount     = colorInfo.colorCount
+                    metadata.colorPageCount      = colorInfo.colorCount
                     metadata.blackWhitePageCount = colorInfo.blackWhiteCount
+                    metadata.colorPageNumbers    = Set(colorInfo.colorPages)
                 }
                 DispatchQueue.main.async {
                     self.pdfMetadataCache[id] = metadata
                     self.loadingMetadataIDs.remove(id)
+                    self.colorAnalysisComplete.insert(id)
                 }
+            }
+        }
+    }
+
+    /// Resetuje GS analýzu barev pro soubor — zavolej po in-place úpravě obsahu souboru.
+    /// Vynuluje cache, takže `ensureColorAnalysis` ji znovu spustí.
+    func resetColorAnalysis(for fileID: UUID) {
+        colorAnalysisComplete.remove(fileID)
+        if var meta = pdfMetadataCache[fileID] {
+            meta.colorPageCount = 0
+            meta.blackWhitePageCount = 0
+            meta.colorPageNumbers = []
+            pdfMetadataCache[fileID] = meta
+        }
+    }
+
+    /// Spustí GS analýzu barev pro soubor, jehož základní metadata jsou již v cache,
+    /// ale GS analýza ještě neproběhla. Bezpečné volat opakovaně.
+    func ensureColorAnalysis(for file: FileItem) {
+        guard file.fileType == .pdf,
+              !colorAnalysisComplete.contains(file.id),
+              !loadingMetadataIDs.contains(file.id),
+              let existingMeta = pdfMetadataCache[file.id],
+              PageColorAnalyzer.shared.isGSAvailable else { return }
+
+        // Pokud GS data v cache jsou, jen označ jako hotovo a skonči
+        if existingMeta.colorPageCount + existingMeta.blackWhitePageCount > 0 {
+            colorAnalysisComplete.insert(file.id)
+            return
+        }
+
+        loadingMetadataIDs.insert(file.id)
+        let url = file.url
+        let id  = file.id
+        PageColorAnalyzer.shared.analyzePDF(at: url) { [weak self] result in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                if case .success(let colorInfo) = result,
+                   var meta = self.pdfMetadataCache[id] {
+                    meta.colorPageCount      = colorInfo.colorCount
+                    meta.blackWhitePageCount = colorInfo.blackWhiteCount
+                    meta.colorPageNumbers    = Set(colorInfo.colorPages)
+                    self.pdfMetadataCache[id] = meta
+                }
+                self.loadingMetadataIDs.remove(id)
+                self.colorAnalysisComplete.insert(id)
             }
         }
     }
@@ -130,11 +231,7 @@ class AppState: ObservableObject {
             trigger: nil
         )
         
-        notificationCenter.add(request) { error in
-            if let error = error {
-                print("Notification error: \(error.localizedDescription)")
-            }
-        }
+        notificationCenter.add(request)
     }
     
     func notifyPrintComplete(fileCount: Int, printerName: String) {
@@ -170,35 +267,160 @@ class AppState: ObservableObject {
     // Services
     private let fileParser = FileParser()
     private let printService = PrintService()
+    /// In-memory cache PDFDocument instancí — sdílí se mezi parserem a PreviewView.
+    /// NSCache automaticky uvolní obsah při tlaku na paměť.
+    let pdfDocumentCache: NSCache<NSURL, PDFDocument> = {
+        let c = NSCache<NSURL, PDFDocument>()
+        c.countLimit = 20   // max 20 dokumentů v paměti
+        return c
+    }()
     private let pdfService = PDFService()
     private let imageService = ImageService()
     private let smartCropService = SmartCropService()
     private let officeConversionService = OfficeConversionService()
     private let blankPageService = BlankPageService()
     
+    // Stitch
+    @Published var showStitchDialog = false
+    @Published var stitchImageFiles: [FileItem] = []
+
+    func openStitchDialog() {
+        let images = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
+        guard images.count >= 2 else {
+            logWarning("Vyber alespoň 2 obrázky pro Stitch")
+            return
+        }
+        guard images.count <= 8 else {
+            logWarning("Stitch podporuje max. 8 obrázků najednou")
+            return
+        }
+        stitchImageFiles = images
+        showStitchDialog = true
+    }
+
+    // Watermark
+    @Published var showWatermarkDialog = false
+
+    func openWatermarkDialog() {
+        let pdfs = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !pdfs.isEmpty else {
+            logWarning("Vyber alespoň jedno PDF pro přidání vodoznaku")
+            return
+        }
+        showWatermarkDialog = true
+    }
+
+    // Image Adjust
+    @Published var showImageAdjustDialog = false
+    @Published var imageAdjustFiles: [FileItem] = []
+
+    // Resize
+    @Published var showResizeDialog = false
+    @Published var resizeDialogFiles: [FileItem] = []
+
+    func openImageAdjustDialog() {
+        let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
+        guard !imgs.isEmpty else {
+            logWarning("Vyber alespoň jeden obrázek pro úpravy")
+            return
+        }
+        imageAdjustFiles = imgs
+        showImageAdjustDialog = true
+    }
+
+    // Gallery
+    @Published var showGalleryDialog = false
+    @Published var galleryImageFiles: [FileItem] = []
+
+    func openGalleryDialog() {
+        let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
+        guard !imgs.isEmpty else {
+            logWarning("Vyber alespoň jeden obrázek pro tvorbu galerie")
+            return
+        }
+        galleryImageFiles = imgs
+        showGalleryDialog = true
+    }
+
+    // Background Removal
+    func removeBackground() {
+        let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
+        guard !imgs.isEmpty else {
+            logWarning("Vyber alespoň jeden obrázek pro odstranění pozadí")
+            return
+        }
+        guard BackgroundRemovalService.visionSupported else {
+            logError("Odstranění pozadí vyžaduje macOS 12 nebo novější")
+            return
+        }
+        logInfo("Odstraňuji pozadí z \(imgs.count) obrázku/ů…")
+        Task {
+            var results: [URL] = []
+            for img in imgs {
+                do {
+                    let out = try await Task.detached(priority: .userInitiated) {
+                        try BackgroundRemovalService.shared.removeBackground(from: img.url)
+                    }.value
+                    results.append(out)
+                } catch {
+                    await MainActor.run {
+                        logError("\(img.name): \(error.localizedDescription)")
+                    }
+                }
+            }
+            let finished = results
+            await MainActor.run {
+                if !finished.isEmpty {
+                    addFiles(urls: finished, autoSelect: false, markAsConverted: true)
+                    logSuccess("Pozadí odstraněno: \(finished.count) soubor(ů) → PNG")
+                }
+            }
+        }
+    }
+
     // Drawings
     @Published var showDrawingsDialog = false
 
     // Quick Look
     var quickLookFileID: UUID?
+    /// Seznam souborů k procházení šipkami v QuickLook (vybrané soubory nebo všechny)
+    var quickLookFileIDs: [UUID] = []
+    @Published var showInlineQuickLook = false
+    @Published var quickLookMode: QuickLookMode = .thumbnails
+    @Published var quickLookCurrentPage: Int = 0
+    @Published var thumbnailZoom: Double = 1.0 // 0.5 = malé, 1.0 = střední, 2.0 = velké
 
     func quickLookMoveUp() {
-        guard let current = quickLookFileID,
-              let idx = files.firstIndex(where: { $0.id == current }),
-              idx > 0 else { return }
-        let prev = files[idx - 1]
-        quickLookFileID = prev.id
-        selectedFiles = [prev.id]
+        guard let current = quickLookFileID else { return }
+        let pool = quickLookFileIDs.isEmpty ? files.map(\.id) : quickLookFileIDs
+        guard let idx = pool.firstIndex(of: current), idx > 0 else { return }
+        let prevID = pool[idx - 1]
+        quickLookFileID = prevID
+        selectedFiles = [prevID]
+        // Automaticky nastavit režim podle typu souboru
+        if let f = files.first(where: { $0.id == prevID }), f.fileType.isImage {
+            quickLookMode = .singlePage
+        } else {
+            quickLookMode = .thumbnails
+        }
+        quickLookCurrentPage = 0
         NotificationCenter.default.post(name: .quickLookFileChanged, object: nil)
     }
 
     func quickLookMoveDown() {
-        guard let current = quickLookFileID,
-              let idx = files.firstIndex(where: { $0.id == current }),
-              idx < files.count - 1 else { return }
-        let next = files[idx + 1]
-        quickLookFileID = next.id
-        selectedFiles = [next.id]
+        guard let current = quickLookFileID else { return }
+        let pool = quickLookFileIDs.isEmpty ? files.map(\.id) : quickLookFileIDs
+        guard let idx = pool.firstIndex(of: current), idx < pool.count - 1 else { return }
+        let nextID = pool[idx + 1]
+        quickLookFileID = nextID
+        selectedFiles = [nextID]
+        // Automaticky nastavit režim podle typu souboru
+        if let f = files.first(where: { $0.id == nextID }), f.fileType.isImage {
+            quickLookMode = .singlePage
+        } else {
+            quickLookMode = .thumbnails
+        }
+        quickLookCurrentPage = 0
         NotificationCenter.default.post(name: .quickLookFileChanged, object: nil)
     }
 
@@ -210,6 +432,44 @@ class AppState: ObservableObject {
         showDrawingsDialog = true
     }
 
+    func impositionPDF() {
+        let pdfFiles = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !pdfFiles.isEmpty else {
+            logWarning("Vyber alespoň jedno PDF pro imposition")
+            return
+        }
+        impositionSourceFile = pdfFiles.first
+        showingImpositionDialog = true
+    }
+
+    // Tile PDF
+    @Published var showTilePDFDialog = false
+    @Published var tilePDFFiles: [FileItem] = []
+
+    func tilePDFAction() {
+        let selected = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !selected.isEmpty else {
+            logWarning("Vyberte alespoň jeden PDF soubor pro funkci Tile")
+            return
+        }
+        tilePDFFiles = selected
+        showTilePDFDialog = true
+    }
+
+    // Expand
+    @Published var showExpandDialog = false
+    @Published var expandFile: FileItem?
+
+    func expandFileAction() {
+        guard let file = getSelectedFile(),
+              file.fileType == .pdf || file.fileType.isImage else {
+            logWarning("Vyberte jeden soubor (PDF nebo obrázek) pro funkci Expand")
+            return
+        }
+        expandFile = file
+        showExpandDialog = true
+    }
+
     // Compression state
     @Published var compressionProgress: Double = 0.0
     @Published var compressionMessage = ""
@@ -219,6 +479,14 @@ class AppState: ObservableObject {
     @Published var showPDFInfoWindow = false
     @Published var currentPDFMetadata: PDFMetadata?
     
+    // InDesign Import
+    @Published var showInDesignImport = false
+
+    func openInDesignImport() {
+        guard !selectedFiles.isEmpty else { return }
+        showInDesignImport = true
+    }
+
     // Office Import
     @Published var showOfficeImportDialog = false
     @Published var pendingOfficeFiles: [URL] = []
@@ -227,41 +495,91 @@ class AppState: ObservableObject {
     // Preview Panel
     @Published var showPreview = false {
         didSet {
-            UserDefaults.standard.set(showPreview, forKey: "showPreview")
+            UserDefaults.standard.set(showPreview, forKey: UDKeys.showPreview)
         }
     }
-    
+
     // Printer Panel (left sidebar) - collapsible
     @Published var showPrinterPanel = true {
         didSet {
-            UserDefaults.standard.set(showPrinterPanel, forKey: "showPrinterPanel")
+            UserDefaults.standard.set(showPrinterPanel, forKey: UDKeys.showPrinterPanel)
         }
     }
 
     // Search
     @Published var searchText: String = ""
-    
+
     // Loading state
     @Published var isLoading = false
     @Published var loadingMessage = ""
-    
+
+    // File list columns & sorting
+    @Published var hiddenColumns: Set<FileListColumn> = []
+    @Published var fileSortKey: FileSortKey = .name
+    @Published var fileSortAscending: Bool = true
+
+    var sortedFiles: [FileItem] {
+        let base = filteredFiles
+        return base.sorted { a, b in
+            let result: Bool
+            switch fileSortKey {
+            case .name:     result = a.name.localizedStandardCompare(b.name) == .orderedAscending
+            case .size:     result = a.pageSizeString.localizedStandardCompare(b.pageSizeString) == .orderedAscending
+            case .kind:     result = a.fileType.rawValue < b.fileType.rawValue
+            case .fileSize: result = a.fileSize < b.fileSize
+            case .pages:    result = a.pageCount < b.pageCount
+            case .colors:   result = a.colorInfo.localizedStandardCompare(b.colorInfo) == .orderedAscending
+            }
+            return fileSortAscending ? result : !result
+        }
+    }
+
+    private var columnCancellable: AnyCancellable?
+    private var sortKeyCancellable: AnyCancellable?
+    private var sortAscCancellable: AnyCancellable?
+
     init() {
-        self.showPrinterPanel = UserDefaults.standard.object(forKey: "showPrinterPanel") as? Bool ?? true
-        self.showPreview = UserDefaults.standard.bool(forKey: "showPreview")
+        self.showPrinterPanel = UserDefaults.standard.object(forKey: UDKeys.showPrinterPanel) as? Bool ?? true
+        self.showPreview = UserDefaults.standard.bool(forKey: UDKeys.showPreview)
+
+        // Restore column/sort settings
+        if let data = UserDefaults.standard.data(forKey: UDKeys.hiddenColumns),
+           let decoded = try? JSONDecoder().decode(Set<FileListColumn>.self, from: data) {
+            self.hiddenColumns = decoded
+        }
+        if let key = UserDefaults.standard.string(forKey: UDKeys.fileSortKey),
+           let decoded = FileSortKey(rawValue: key) {
+            self.fileSortKey = decoded
+        }
+        self.fileSortAscending = UserDefaults.standard.object(forKey: UDKeys.fileSortAscending) as? Bool ?? true
+
         loadExternalApps()
+
+        // Persist column/sort settings via Combine
+        columnCancellable = $hiddenColumns.dropFirst().sink { val in
+            if let data = try? JSONEncoder().encode(val) {
+                UserDefaults.standard.set(data, forKey: UDKeys.hiddenColumns)
+            }
+        }
+        sortKeyCancellable = $fileSortKey.dropFirst().sink { val in
+            UserDefaults.standard.set(val.rawValue, forKey: UDKeys.fileSortKey)
+        }
+        sortAscCancellable = $fileSortAscending.dropFirst().sink { val in
+            UserDefaults.standard.set(val, forKey: UDKeys.fileSortAscending)
+        }
     }
 
     // MARK: - External Apps
 
     private func loadExternalApps() {
-        guard let data = UserDefaults.standard.data(forKey: "pm.externalApps"),
+        guard let data = UserDefaults.standard.data(forKey: UDKeys.externalApps),
               let apps = try? JSONDecoder().decode([ExternalApp].self, from: data) else { return }
         externalApps = apps
     }
 
     private func saveExternalApps() {
         guard let data = try? JSONEncoder().encode(externalApps) else { return }
-        UserDefaults.standard.set(data, forKey: "pm.externalApps")
+        UserDefaults.standard.set(data, forKey: UDKeys.externalApps)
     }
 
     func addExternalApp(url: URL) {
@@ -375,7 +693,13 @@ class AppState: ObservableObject {
         }
     }
 
-    func addFiles(urls: [URL]) {
+    func addFiles(urls: [URL], autoSelect: Bool = false, markAsConverted: Bool = false) {
+        // Při přidání souboru vždy zavřít inline QuickLook a vrátit se na list souborů
+        if showInlineQuickLook {
+            showInlineQuickLook = false
+            quickLookMode = .thumbnails
+        }
+
         let expandedURLs = expandURLs(urls)
         let folderCount = urls.filter {
             (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
@@ -396,10 +720,13 @@ class AppState: ObservableObject {
         }
 
         // ── Neoffice soubory — přidej placeholder okamžitě, parsuj na pozadí ──
+        let isOutput = autoSelect || markAsConverted
+
+        var newIDs: Set<UUID> = []
         for url in otherURLs {
             let fileType = FileType.from(extension: url.pathExtension.lowercased())
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-            let placeholder = FileItem(
+            var placeholder = FileItem(
                 url: url,
                 name: url.deletingPathExtension().lastPathComponent,
                 fileType: fileType,
@@ -409,27 +736,46 @@ class AppState: ObservableObject {
                 colorInfo: "…",
                 status: .processing
             )
+            placeholder.isConverted = isOutput
             files.append(placeholder)
             let placeholderID = placeholder.id
+            newIDs.insert(placeholderID)
 
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self else { return }
-                guard let parsed = self.fileParser.parseFile(url: url) else {
+                guard var parsed = self.fileParser.parseFile(url: url) else {
                     DispatchQueue.main.async {
                         self.files.removeAll { $0.id == placeholderID }
                         self.logError("Nelze načíst: \(url.lastPathComponent)")
                     }
                     return
                 }
-                var updated = parsed
-                updated.id = placeholderID   // zachovat UUID → selection zůstane
+                parsed.id          = placeholderID   // zachovat UUID → selection zůstane
+                parsed.isConverted = isOutput
+
+                // Fáze 1: zobraz metadata okamžitě (thumbnail může být nil pokud nebyl v cache)
                 DispatchQueue.main.async {
                     if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
-                        self.files[idx] = updated
-                        self.logSuccess("Načteno: \(updated.name)")
+                        self.files[idx] = parsed
+                        if parsed.thumbnail != nil { self.logSuccess("Načteno: \(parsed.name)") }
+                    }
+                }
+
+                // Fáze 2: pokud thumbnail nebyl v cache, generuj a ulož na pozadí
+                if parsed.thumbnail == nil {
+                    let thumb = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
+                    DispatchQueue.main.async {
+                        if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
+                            self.files[idx].thumbnail = thumb
+                            self.logSuccess("Načteno: \(parsed.name)")
+                        }
                     }
                 }
             }
+        }
+
+        if autoSelect && !newIDs.isEmpty {
+            selectedFiles = newIDs
         }
 
         // ── Office soubory — dialog pro konverzi ──────────────────────────────
@@ -441,7 +787,9 @@ class AppState: ObservableObject {
     }
     
     func removeSelectedFiles() {
-        files.removeAll { selectedFiles.contains($0.id) }
+        let ids = selectedFiles
+        cleanupCache(for: ids)
+        files.removeAll { ids.contains($0.id) }
         selectedFiles.removeAll()
         logInfo("Removed selected files")
     }
@@ -459,6 +807,7 @@ class AppState: ObservableObject {
                 logError("Nelze přesunout do koše: \(file.name) – \(error.localizedDescription)")
             }
         }
+        cleanupCache(for: ids)
         files.removeAll { ids.contains($0.id) }
         selectedFiles.subtract(ids)
         if successCount > 0 {
@@ -467,6 +816,7 @@ class AppState: ObservableObject {
     }
     
     func removeFiles(items: Set<UUID>) {
+        cleanupCache(for: items)
         files.removeAll { items.contains($0.id) }
         selectedFiles.subtract(items)
         logInfo("Removed \(items.count) file(s)")
@@ -474,6 +824,8 @@ class AppState: ObservableObject {
     
     func clearAllFiles() {
         let count = files.count
+        pdfMetadataCache.removeAll()
+        loadingMetadataIDs.removeAll()
         files.removeAll()
         selectedFiles.removeAll()
         logInfo("Cleared \(count) file(s)")
@@ -548,16 +900,16 @@ class AppState: ObservableObject {
                 let outputFiles = try await pdfService.splitPDF(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("Split PDF into \(outputFiles.count) files")
-                    addFiles(urls: outputFiles)
+                    addFiles(urls: outputFiles, autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to split PDF: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to split PDF")
                 }
             }
         }
     }
-    
+
     func mergePDFs() {
         let pdfFiles = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
         
@@ -573,11 +925,11 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.mergePDFs(urls: pdfFiles.map { $0.url })
                 await MainActor.run {
                     logSuccess("Merged PDFs successfully")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to merge PDFs: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to merge PDFs")
                 }
             }
         }
@@ -624,7 +976,7 @@ class AppState: ObservableObject {
                         compressionMessage = ""
                         
                         logSuccess("Compressed PDF: \(String(format: "%.1f", result.savingsPercent))% smaller (\(result.fileSizeFormatted))")
-                        addFiles(urls: [outputURL])
+                        addFiles(urls: [outputURL], autoSelect: true)
                         notifyCompressionComplete(originalSize: inputSize, compressedSize: outputSize)
                     }
                 } catch {
@@ -636,7 +988,7 @@ class AppState: ObservableObject {
                 await MainActor.run { [self] in
                     compressionProgress = 0.0
                     compressionMessage = ""
-                    logError("Failed to compress PDF: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to compress PDF")
                 }
             }
         }
@@ -699,12 +1051,12 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.convertSelectiveToGray(url: file.url, colorPages: colorPages)
                 await MainActor.run {
                     logSuccess("Selektivní šedá hotova: \(outputURL.lastPathComponent)")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                     completion()
                 }
             } catch {
                 await MainActor.run {
-                    logError("Selektivní šedá selhala: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Selektivní šedá selhala")
                     completion()
                 }
             }
@@ -726,7 +1078,7 @@ class AppState: ObservableObject {
                 let outputURLs = try await smartCropService.smartCropFiles(urls: selectedFiles.map { $0.url })
                 await MainActor.run {
                     logSuccess("Smart crop completed for \(outputURLs.count) file(s)")
-                    addFiles(urls: outputURLs)
+                    addFiles(urls: outputURLs, autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
@@ -751,16 +1103,16 @@ class AppState: ObservableObject {
                 let outputURLs = try await blankPageService.addBlankPageToOddDocuments(urls: selectedFiles.map { $0.url })
                 await MainActor.run {
                     logSuccess("Added blank pages to \(outputURLs.count) document(s)")
-                    addFiles(urls: outputURLs)
+                    addFiles(urls: outputURLs, autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to add blank pages: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to add blank pages")
                 }
             }
         }
     }
-    
+
     func rasterizePDF() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
             logWarning("Select a single PDF file to rasterize")
@@ -774,16 +1126,16 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.rasterizePDF(url: selectedFile.url, dpi: 300)
                 await MainActor.run {
                     logSuccess("Rasterized PDF successfully")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to rasterize PDF: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to rasterize PDF")
                 }
             }
         }
     }
-    
+
     func ocrPDF() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
             logWarning("Select a single PDF file for OCR")
@@ -797,16 +1149,16 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.ocrPDF(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("OCR completed successfully")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to perform OCR: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to perform OCR")
                 }
             }
         }
     }
-    
+
     func extractImagesFromPDF() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
             logWarning("Select a single PDF file to extract images")
@@ -820,16 +1172,16 @@ class AppState: ObservableObject {
                 let imageURLs = try await pdfService.extractImages(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("Extracted \(imageURLs.count) image(s)")
-                    addFiles(urls: imageURLs)
+                    addFiles(urls: imageURLs, autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to extract images: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to extract images")
                 }
             }
         }
     }
-    
+
     func showPDFInfo() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
             logWarning("Select a single PDF file to view info")
@@ -863,16 +1215,16 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.convertToGray(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("Converted to gray: \(outputURL.lastPathComponent)")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to convert to gray: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to convert to gray")
                 }
             }
         }
     }
-    
+
     func flattenTransparency() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
             logWarning("Select a single PDF file to flatten transparency")
@@ -886,16 +1238,16 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.flattenTransparency(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("Flattened transparency: \(outputURL.lastPathComponent)")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to flatten transparency: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to flatten transparency")
                 }
             }
         }
     }
-    
+
     func fixPDF() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
             logWarning("Select a single PDF file to fix")
@@ -909,17 +1261,16 @@ class AppState: ObservableObject {
                 let outputURL = try await pdfService.fixPDF(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("Fixed PDF: \(outputURL.lastPathComponent)")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
-                    logError("Failed to fix PDF: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to fix PDF")
                 }
             }
         }
     }
 
-    
     // MARK: - Image Operations
     
     func convertImageToPDF() {
@@ -937,12 +1288,12 @@ class AppState: ObservableObject {
                 let outputURL = try await imageService.convertToPDF(urls: imageFiles.map { $0.url })
                 await MainActor.run { [self] in
                     logSuccess("Converted images to PDF")
-                    addFiles(urls: [outputURL])
+                    addFiles(urls: [outputURL], autoSelect: true)
                     notifyConversionComplete(fileCount: imageFiles.count, successCount: 1)
                 }
             } catch {
                 await MainActor.run { [self] in
-                    logError("Failed to convert to PDF: \(error.localizedDescription)")
+                    handleOperationError(error, operationDescription: "Failed to convert to PDF")
                     notifyError(title: "Conversion Failed", message: error.localizedDescription)
                 }
             }
@@ -950,12 +1301,33 @@ class AppState: ObservableObject {
     }
     
     func resizeImage() {
-        guard let selectedFile = getSelectedFile(), selectedFile.fileType.isImage else {
-            logWarning("Select a single image file to resize")
+        let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
+        guard !imgs.isEmpty else {
+            logWarning("Vyber alespoň jeden obrázek pro změnu velikosti")
             return
         }
-        
-        logInfo("Opening resize dialog for: \(selectedFile.name)")
+        resizeDialogFiles = imgs
+        showResizeDialog  = true
+    }
+
+    func resizePDF() {
+        let pdfs = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !pdfs.isEmpty else {
+            logWarning("Vyber alespoň jeden PDF soubor pro změnu velikosti")
+            return
+        }
+        resizeDialogFiles = pdfs
+        showResizeDialog  = true
+    }
+
+    func resizeFiles() {
+        let sel = files.filter { selectedFiles.contains($0.id) }
+        guard !sel.isEmpty else {
+            logWarning("Vyber soubory pro změnu velikosti")
+            return
+        }
+        resizeDialogFiles = sel
+        showResizeDialog  = true
     }
     
     func rotateImage() {
@@ -974,7 +1346,8 @@ class AppState: ObservableObject {
                     let outputURL = try await imageService.rotateImage(url: file.url, degrees: 90)
                     await MainActor.run {
                         if let index = files.firstIndex(where: { $0.id == file.id }) {
-                            if let newFile = fileParser.parseFile(url: outputURL) {
+                            if var newFile = fileParser.parseFile(url: outputURL) {
+                                newFile.isConverted = true
                                 files[index] = newFile
                             }
                         }
@@ -1067,7 +1440,8 @@ class AppState: ObservableObject {
                     let outputURL = try await imageService.invertImage(url: file.url)
                     await MainActor.run {
                         if let index = files.firstIndex(where: { $0.id == file.id }) {
-                            if let newFile = fileParser.parseFile(url: outputURL) {
+                            if var newFile = fileParser.parseFile(url: outputURL) {
+                                newFile.isConverted = true
                                 files[index] = newFile
                             }
                         }
@@ -1095,7 +1469,7 @@ class AppState: ObservableObject {
                 let extractedURLs = try await imageService.detectAndExtractImages(url: selectedFile.url)
                 await MainActor.run {
                     logSuccess("Extracted \(extractedURLs.count) sub-image(s)")
-                    addFiles(urls: extractedURLs)
+                    addFiles(urls: extractedURLs, autoSelect: true)
                 }
             } catch {
                 await MainActor.run {
@@ -1117,7 +1491,7 @@ class AppState: ObservableObject {
             return
         }
 
-        let apiKey = UserDefaults.standard.string(forKey: "cloudConvertApiKey") ?? ""
+        let apiKey = UserDefaults.standard.string(forKey: UDKeys.cloudConvertApiKey) ?? ""
         guard !apiKey.isEmpty else {
             logError("CloudConvert API key not set. Configure in Settings → CloudConvert.")
             return
@@ -1136,7 +1510,7 @@ class AppState: ObservableObject {
                 do {
                     let pdfURL = try await service.convertToPDF(fileURL: file.url)
                     await MainActor.run {
-                        addFiles(urls: [pdfURL])
+                        addFiles(urls: [pdfURL], autoSelect: true)
                         updateFileStatus(id: file.id, status: .ready)
                         logSuccess("CloudConvert: done → \(pdfURL.lastPathComponent)")
                     }
@@ -1182,7 +1556,7 @@ class AppState: ObservableObject {
                 do {
                     let pdfURL = try await service.convertToPDF(fileURL: file.url)
                     await MainActor.run {
-                        addFiles(urls: [pdfURL])
+                        addFiles(urls: [pdfURL], autoSelect: true)
                         updateFileStatus(id: file.id, status: .ready)
                         logSuccess("Google: done → \(pdfURL.lastPathComponent)")
                     }
@@ -1225,7 +1599,7 @@ class AppState: ObservableObject {
                 do {
                     let pdfURL = try await officeConversionService.convertToPDF(url: file.url)
                     await MainActor.run {
-                        addFiles(urls: [pdfURL])
+                        addFiles(urls: [pdfURL], autoSelect: true)
                         updateFileStatus(id: file.id, status: .ready)
                         logSuccess("Done → \(pdfURL.lastPathComponent)")
                     }
@@ -1299,7 +1673,14 @@ class AppState: ObservableObject {
     }
     
     // MARK: - Helper Methods
-    
+
+    private func cleanupCache(for ids: Set<UUID>) {
+        for id in ids {
+            pdfMetadataCache.removeValue(forKey: id)
+            loadingMetadataIDs.remove(id)
+        }
+    }
+
     private func getSelectedFile() -> FileItem? {
         guard selectedFiles.count == 1,
               let firstId = selectedFiles.first,
@@ -1332,7 +1713,43 @@ class AppState: ObservableObject {
     func logError(_ message: String) {
         debugMessages.append(DebugMessage(message: message, level: .error))
     }
-    
+
+    // MARK: - Write Failure Fallback
+
+    /// Zpracuje chybu operace. Pokud jde o selhání zápisu s dostupnými daty,
+    /// zobrazí panel "Uložit jako" a nechá uživatele vybrat umístění.
+    func handleOperationError(_ error: Error, operationDescription: String) {
+        if case PDFError.writeFailedWithFallback(_, let data, let suggestedName) = error {
+            logWarning("Zápis selhal – vyberte jiné umístění pro '\(suggestedName)'")
+            offerSaveAsDialog(data: data, suggestedName: suggestedName)
+        } else {
+            logError("\(operationDescription): \(error.localizedDescription)")
+        }
+    }
+
+    /// Zobrazí macOS dialog "Uložit jako" a uloží data na vybrané místo.
+    /// Musí být voláno na hlavním vlákně.
+    func offerSaveAsDialog(data: Data, suggestedName: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedName
+        panel.allowedContentTypes = [UTType.pdf]
+        panel.message = "Původní umístění není přístupné. Vyberte, kam soubor uložit:"
+        panel.begin { [weak self] response in
+            guard let self = self, response == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url)
+                DispatchQueue.main.async {
+                    self.logSuccess("Soubor uložen: \(url.lastPathComponent)")
+                    self.addFiles(urls: [url], autoSelect: true)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.logError("Zápis do zvoleného umístění selhal: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     func clearDebugLog() {
         debugMessages.removeAll()
     }
@@ -1342,11 +1759,12 @@ class AppState: ObservableObject {
         guard !selectedPrinter.isEmpty else {
             availableSystemPresets = []
             selectedPreset = nil
+            systemPresetsFilePath = nil
             return
         }
 
         let printer   = selectedPrinter
-        let cacheKey  = "pm.cache.presets.\(printer)"
+        let cacheKey  = UDKeys.presetCache(printer: printer)
 
         // 1. Okamžitě zobraz z cache (bez I/O blokování UI)
         if let data   = UserDefaults.standard.data(forKey: cacheKey),
@@ -1358,14 +1776,14 @@ class AppState: ObservableObject {
         // 2. Na pozadí načti čerstvá data ze systémového plistu a přeulož cache
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let fresh = SystemPresetService().loadPresets(for: printer)
-            if let data = try? JSONEncoder().encode(fresh) {
+            let result = SystemPresetService().loadPresetsWithInfo(for: printer)
+            if let data = try? JSONEncoder().encode(result.presets) {
                 UserDefaults.standard.set(data, forKey: cacheKey)
             }
             DispatchQueue.main.async {
-                // Aktualizuj jen pokud se stále díváme na stejnou tiskárnu
                 guard self.selectedPrinter == printer else { return }
-                self.availableSystemPresets = fresh
+                self.availableSystemPresets = result.presets
+                self.systemPresetsFilePath = result.foundPath.map { URL(fileURLWithPath: $0) }
                 self.validateSelectedPreset()
             }
         }
@@ -1377,8 +1795,70 @@ class AppState: ObservableObject {
             selectedPreset = nil
         }
     }
+
+    /// Smaže systémový preset z plist souboru a znovu načte seznam.
+    func deleteSystemPreset(name: String) {
+        let printer = selectedPrinter
+        let service = SystemPresetService()
+        if service.deletePreset(named: name, forPrinter: printer) {
+            // Invalidovat cache
+            let cacheKey = UDKeys.presetCache(printer: printer)
+            UserDefaults.standard.removeObject(forKey: cacheKey)
+            if selectedPreset == name { selectedPreset = nil }
+            loadSystemPresets()
+            logInfo("Preset \"\(name)\" byl smazán")
+        } else {
+            logError("Nelze smazat preset \"\(name)\"")
+        }
+    }
+
+    /// Vytiskne soubory na konkrétní tiskárnu (drag & drop z file listu).
+    func printFiles(urls: [URL], toPrinter printerName: String) {
+        let urlStrings = Set(urls.map { $0.absoluteString })
+        let filesToPrint = files.filter { urlStrings.contains($0.url.absoluteString) }
+        guard !filesToPrint.isEmpty else { return }
+
+        let presetOptions = availableSystemPresets.first(where: { $0.name == selectedPreset })?.lpOptions ?? []
+        let settings = PrintSettings(
+            printer: printerName,
+            preset: selectedPreset,
+            presetOptions: presetOptions,
+            copies: printCopies,
+            twoSided: printTwoSided,
+            collate: printCollate,
+            fitToPage: printFitToPage,
+            landscape: printLandscape,
+            colorMode: printColorMode,
+            paperSize: printPaperSize
+        )
+
+        logInfo("Tisknu \(filesToPrint.count) soubor(u) na \(printerName)...")
+
+        Task {
+            do {
+                for file in filesToPrint {
+                    try await printService.printFile(file: file, settings: settings)
+                    await MainActor.run {
+                        updateFileStatus(id: file.id, status: .printed)
+                        logSuccess("Vytisknuto: \(file.name)")
+                    }
+                }
+                await MainActor.run { [self] in
+                    logSuccess("Tisk dokončen")
+                    notifyPrintComplete(fileCount: filesToPrint.count, printerName: printerName)
+                }
+            } catch {
+                await MainActor.run { [self] in
+                    logError("Tisk selhal: \(error.localizedDescription)")
+                    notifyError(title: "Tisk selhal", message: error.localizedDescription)
+                }
+            }
+        }
+    }
 }
 
 extension Notification.Name {
     static let quickLookFileChanged = Notification.Name("quickLookFileChanged")
+    static let quickLookPagePrevious = Notification.Name("quickLookPagePrevious")
+    static let quickLookPageNext = Notification.Name("quickLookPageNext")
 }

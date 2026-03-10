@@ -17,6 +17,8 @@ struct BatchRenameView: View {
     @State private var separator: String  = "_"
     @State private var padding: Int       = 2      // počet číslic (2 → 01, 3 → 001)
     @State private var startNumber: Int   = 1
+    @State private var prependSize: Bool       = false  // přidat rozměr stránky jako prefix
+    @State private var keepOriginalName: Bool  = false  // zachovat původní název (bez přečíslování)
 
     // ── Stav ──────────────────────────────────────────────────────────────
     @State private var isRenaming = false
@@ -26,13 +28,24 @@ struct BatchRenameView: View {
         appState.files.filter { appState.selectedFiles.contains($0.id) }
     }
 
+    private func sizePrefix(for file: FileItem) -> String? {
+        guard prependSize, file.pageSize.width > 0, file.pageSize.height > 0 else { return nil }
+        let wMM = Int(file.pageSize.width  * 0.352777778)
+        let hMM = Int(file.pageSize.height * 0.352777778)
+        return "[\(wMM)x\(hMM)]_"
+    }
+
     private func newName(for file: FileItem, index: Int) -> String {
         let ext = file.fileType.rawValue.lowercased()
+        let prefix = sizePrefix(for: file) ?? ""
+        if keepOriginalName && prependSize {
+            return "\(prefix)\(file.name).\(ext)"
+        }
         let num = String(format: "%0\(padding)d", startNumber + index)
         let sep = separator == "none" ? "" : separator
         let base = baseName.trimmingCharacters(in: .whitespaces)
         let stem = base.isEmpty ? num : "\(base)\(sep)\(num)"
-        return "\(stem).\(ext)"
+        return "\(prefix)\(stem).\(ext)"
     }
 
     // ── Body ──────────────────────────────────────────────────────────────
@@ -52,7 +65,7 @@ struct BatchRenameView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(DS.Colors.windowBackground)
 
             Divider()
 
@@ -95,6 +108,15 @@ struct BatchRenameView: View {
                             .frame(width: 160)
                     }
                 }
+                .disabled(keepOriginalName && prependSize)
+
+                Section("Prefix") {
+                    Toggle("Přidat rozměr stránky (mm)", isOn: $prependSize)
+                        .onChange(of: prependSize) { if !$0 { keepOriginalName = false } }
+                    if prependSize {
+                        Toggle("Zachovat původní název (bez přečíslování)", isOn: $keepOriginalName)
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -104,7 +126,7 @@ struct BatchRenameView: View {
             // ── Náhled ────────────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 6) {
                 Text("Náhled")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DS.Typography.captionSemibold)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -114,13 +136,13 @@ struct BatchRenameView: View {
                         ForEach(Array(selectedFiles.enumerated()), id: \.element.id) { idx, file in
                             HStack(spacing: 0) {
                                 Text(file.name + "." + file.fileType.rawValue.lowercased())
-                                    .font(.system(size: 11))
+                                    .font(DS.Typography.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
 
                                 Image(systemName: "arrow.right")
-                                    .font(.system(size: 10))
+                                    .font(DS.Typography.smallIcon)
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal, 8)
 
@@ -133,8 +155,8 @@ struct BatchRenameView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 4)
                             .background(idx % 2 == 0
-                                ? Color(NSColor.controlBackgroundColor)
-                                : Color(NSColor.windowBackgroundColor))
+                                ? DS.Colors.controlBackground
+                                : DS.Colors.windowBackground)
                         }
                     }
                 }
@@ -147,7 +169,7 @@ struct BatchRenameView: View {
             VStack(spacing: 6) {
                 if let err = errorMessage {
                     Label(err, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
+                        .font(DS.Typography.caption)
                         .foregroundColor(.red)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -168,13 +190,14 @@ struct BatchRenameView: View {
                         Label("Přejmenovat \(selectedFiles.count) souborů", systemImage: "pencil")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isRenaming || selectedFiles.isEmpty || baseName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(isRenaming || selectedFiles.isEmpty
+                        || (!keepOriginalName && baseName.trimmingCharacters(in: .whitespaces).isEmpty))
                     .keyboardShortcut(.defaultAction)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(DS.Colors.windowBackground)
         }
         .frame(minWidth: 600, minHeight: 380)
     }

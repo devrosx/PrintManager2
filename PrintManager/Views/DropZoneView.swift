@@ -117,15 +117,16 @@ struct DropZoneView: View {
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         var droppedURLs: [URL] = []
         let group = DispatchGroup()
-        
+        let serialQ = DispatchQueue(label: "pm.dropzone.urls")
+
         for provider in providers {
             group.enter()
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
                 defer { group.leave() }
-                
+
                 if let data = item as? Data,
                    let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    droppedURLs.append(url)
+                    serialQ.sync { droppedURLs.append(url) }
                 }
             }
         }
@@ -195,7 +196,7 @@ struct AnimatedProgressView: View {
         .padding(24)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(NSColor.controlBackgroundColor))
+                .fill(DS.Colors.controlBackground)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 4)
         )
     }
@@ -268,7 +269,7 @@ struct StatusBanner: View {
             .padding()
             .background(type.color.opacity(0.15))
             .foregroundColor(type.color)
-            .cornerRadius(10)
+            .cornerRadius(DS.Radius.medium)
             .padding(.horizontal)
             .transition(.move(edge: .top).combined(with: .opacity))
         }
@@ -339,7 +340,7 @@ struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: icon)
-                .font(.system(size: 48))
+                .font(DS.Typography.largeIcon)
                 .foregroundColor(.secondary.opacity(0.5))
             
             Text(title)

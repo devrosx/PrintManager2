@@ -1,0 +1,422 @@
+/* PrintManager – English Localizable.strings */
+/* Development language: Czech (cs). This file provides English translations. */
+
+/* MARK: - Settings tabs (SettingsTab.rawValue) */
+"Obecné" = "General";
+"Cena" = "Pricing";
+"About" = "About";
+
+/* MARK: - Tabs */
+"Informace" = "Information";
+"Kalkulace" = "Pricing";
+
+/* MARK: - Main UI */
+"Soubory" = "Files";
+"Náhled" = "Preview";
+"Přidej aplikaci klikem na +" = "Add an app by clicking +";
+"Žádný soubor nevybrán" = "No file selected";
+"Žádné PDF soubory ve výběru" = "No PDF files selected";
+"Analyzuji…" = "Analyzing…";
+"Generuji náhled…" = "Generating preview…";
+"Renderuji…" = "Rendering…";
+"Zpracovávám…" = "Processing…";
+"Zpracovávám stránky…" = "Processing pages…";
+"Detekuji hrany…" = "Detecting edges…";
+"Detekuji fotografie…" = "Detecting photos…";
+"Detekuji úhel…" = "Detecting angle…";
+"Detekuji…" = "Detecting…";
+
+/* MARK: - File list */
+"Drag files here or click + to add" = "Drag files here or click + to add";
+"Formát / Typ" = "Format / Type";
+"Formát" = "Format";
+"Velikost" = "Size";
+"Stránky" = "Pages";
+"Barvy" = "Colors";
+"Soubory" = "Files";
+
+/* MARK: - Toolbar / Menu */
+"Tisknout…" = "Print…";
+"Tisknout stránky" = "Print pages";
+"Zobrazit náhledy stránek" = "Show page thumbnails";
+"Zobrazit název souboru" = "Show filename";
+"Zobrazit ve Finderu" = "Show in Finder";
+"Vybrat vše" = "Select All";
+"Zrušit výběr" = "Deselect All";
+"Zrušit vše" = "Deselect All";
+"Vybrat barevné stránky" = "Select Color Pages";
+"Vybrat všechny PDF" = "Select All PDFs";
+"Aktualizovat seznam tiskáren" = "Refresh Printer List";
+"Znovu načíst presety ze systému" = "Reload System Presets";
+"Uložit aktuální nastavení jako preset" = "Save Current Settings as Preset";
+"Ukázat preset soubor ve Finderu" = "Show Preset File in Finder";
+"Automaticky obnovit seznam tiskáren" = "Auto-refresh Printer List";
+"Vždy navrchu" = "Always on Top";
+"Hromadné přejmenování" = "Batch Rename";
+"Extrahovat stránky" = "Extract Pages";
+"Importovat do InDesign" = "Import to InDesign";
+"Importovat vybrané soubory do Adobe InDesign" = "Import selected files into Adobe InDesign";
+"Importovat" = "Import";
+"InDesign nenalezen" = "InDesign not found";
+"Otvírám InDesign…" = "Opening InDesign…";
+
+/* MARK: - PDF Actions */
+"Combine PDF" = "Combine PDF";
+"Compress PDF" = "Compress PDF";
+"Fix PDF" = "Fix PDF";
+"Apply PDF Box" = "Apply PDF Box";
+"Flatten Transparency" = "Flatten Transparency";
+"Zploštit průhlednost" = "Flatten Transparency";
+"Extract Images from PDF" = "Extract Images from PDF";
+"Downsample Images" = "Downsample Images";
+"Compress Images" = "Compress Images";
+"Convert to Gray" = "Convert to Grayscale";
+"Add Blank Page to Odd" = "Add Blank Page to Odd";
+"Choose Color Pages" = "Choose Color Pages";
+"Vyberte barevné stránky" = "Choose Color Pages";
+"Imposition" = "Imposition";
+"Imposition..." = "Imposition...";
+"Imposition…" = "Imposition…";
+"Tile PDF…" = "Tile PDF…";
+"Expand (Bleed)..." = "Expand (Bleed)...";
+"Expand (Bleed)…" = "Expand (Bleed)…";
+"Watermark…" = "Watermark…";
+
+/* MARK: - Image Actions */
+"Crop Image" = "Crop Image";
+"Crop PDF/Image" = "Crop PDF/Image";
+"Convert to PDF" = "Convert to PDF";
+"Invert Colors" = "Invert Colors";
+"Detect & Extract Sub-Images" = "Detect & Extract Sub-Images";
+"Adjust Image…" = "Adjust Image…";
+"Změnit velikost" = "Resize";
+"Úpravy obrazu" = "Image Adjustments";
+"Stitch — Spojení obrázků" = "Stitch — Join Images";
+"Vodoznak (Watermark)" = "Watermark";
+"Zpracování výkresů" = "Process Drawings";
+"Zpracování naskenovaných výkresů" = "Process Scanned Drawings";
+"Výkresy" = "Drawings";
+"Create Gallery…" = "Create Gallery…";
+"Vytvořit galerii" = "Create Gallery";
+"Vytvořit InDesign galerii" = "Create InDesign Gallery";
+
+/* MARK: - Office Import */
+"Import Office dokumentů" = "Import Office Documents";
+"Online konverze Office souborů do PDF" = "Online conversion of Office files to PDF";
+"Převod Office souborů do PDF přes Google Drive API" = "Convert Office files to PDF via Google Drive API";
+"Vyberte způsob převodu Office dokumentů do PDF:" = "Select conversion method for Office documents:";
+"Nejprve zkusí OpenOffice. Pokud není dostupný, použije CloudConvert." = "Tries OpenOffice first. If unavailable, uses CloudConvert.";
+"Použije OpenOffice/LibreOffice nainstalovaný v počítači. Rychlý, bez internetu." = "Uses OpenOffice/LibreOffice installed on your computer. Fast, offline.";
+"Použije CloudConvert API. Vyžaduje internet a API klíč v Nastavení." = "Uses CloudConvert API. Requires internet and API key in Settings.";
+"Nahraje soubor na Google Drive, exportuje jako PDF a smaže ho. Vyžaduje přihlášení." = "Uploads file to Google Drive, exports as PDF and deletes it. Requires sign-in.";
+"Použije iLovePDF API. Vyžaduje Public Key v Nastavení. Free tier: 250 requestů/měsíc." = "Uses iLovePDF API. Requires Public Key in Settings. Free tier: 250 requests/month.";
+
+/* MARK: - Printer settings */
+"Tiskárna:" = "Printer:";
+"Počet kopií:" = "Copies:";
+"Fit to page" = "Fit to page";
+"Two-sided" = "Two-sided";
+"Collate" = "Collate";
+"Výchozí tiskárna" = "Default Printer";
+"Výchozí tiskárna (nastaveno v Preferences)" = "Default Printer (set in Preferences)";
+"Vybraná tiskárna bude při spuštění automaticky označena v seznamu tiskáren." = "The selected printer will be automatically highlighted in the printer list on startup.";
+"Žádné presety" = "No Presets";
+"Žádné specifické nastavení" = "No specific settings";
+"— bez presetu —" = "— no preset —";
+"Uložit" = "Save";
+"Systémová výchozí" = "System Default";
+"Auto-rotate stránek" = "Auto-rotate pages";
+
+/* MARK: - Pricing / Kalkulace */
+"Cena tisku" = "Print Pricing";
+"Celkem:" = "Total:";
+"Kč/str" = "CZK/page";
+"Bar Kč/cm" = "Roll CZK/cm";
+"ČB Kč/cm" = "B&W CZK/cm";
+"Složení Kč" = "Folding CZK";
+"Složení výkresů" = "Fold drawings";
+"Celé černobíle" = "All black & white";
+"Velkoformátový tisk – ploter" = "Large-format printing – plotter";
+"Velkoformátový tisk: cena Kč za cm délky výtisku (délka zaokrouhlena nahoru)." = "Large-format printing: price CZK per cm of print length (length rounded up).";
+"Ceny jsou v Kč včetně DPH." = "Prices are in CZK incl. VAT.";
+"Cenová hladina A4/A3 se určí podle celkového počtu stran ve výběru." = "The A4/A3 price tier is determined by the total page count in the selection.";
+"Šíře role" = "Roll Width";
+
+/* MARK: - Compression */
+"Compression Preset" = "Compression Preset";
+"Quality Settings" = "Quality Settings";
+"Overall Quality" = "Overall Quality";
+"Image Quality" = "Image Quality";
+"Image DPI" = "Image DPI";
+"Nižší kvalita = menší soubor" = "Lower quality = smaller file";
+"Vyšší DPI = větší soubor" = "Higher DPI = larger file";
+"Estimated Result" = "Estimated Result";
+
+/* MARK: - Crop */
+"Crop Area" = "Crop Area";
+"Crop Mode" = "Crop Mode";
+"Crop to" = "Crop to";
+"Margins (points)" = "Margins (points)";
+"Okraje (mm)" = "Margins (mm)";
+"Ořez (mm):" = "Crop (mm):";
+"Táhni za úchyty v náhledu pro úpravu ořezu" = "Drag handles in preview to adjust crop";
+"PDF se ořeže o \(String(format: " = "PDF will be cropped by \(String(format: ";
+"Odsazení (mm):" = "Inset (mm):";
+"Oblast: \(Int(viewModel.settings.ocrRegionLeft*100))% zleva, " = "Region: \(Int(viewModel.settings.ocrRegionLeft*100))% from left, ";
+"Táhni pro definici oblasti OCR — Esc pro zrušení" = "Drag to define OCR region — Esc to cancel";
+
+/* MARK: - Watermark */
+"Text vodoznaku:" = "Watermark text:";
+"Průhlednost:" = "Opacity:";
+"Průhledné pozadí" = "Transparent background";
+"Pozice:" = "Position:";
+"Velikost písma v tabulce:" = "Font size:";
+"Nahoře" = "Top";
+"Dole" = "Bottom";
+"Vlevo" = "Left";
+"Vpravo" = "Right";
+"Uvnitř obrázku (překryt dole)" = "Inside image (overlaid at bottom)";
+"Výchozí: pravý dolní roh (25×25 %)" = "Default: bottom right corner (25×25%)";
+
+/* MARK: - Imposition */
+"Vytvořit Imposition" = "Create Imposition";
+"Umístění stránek" = "Page Layout";
+"Facing Pages (protilehlé stránky)" = "Facing Pages";
+"Výchozí okraj od hrany papíru při vytváření imposice.\nTiskárna obvykle nemůže tisknout blíže k okraji." = "Default margin from paper edge when creating imposition.\nThe printer usually cannot print closer to the edge.";
+"Sloupce:" = "Columns:";
+"Řádky:" = "Rows:";
+"Mezera H (mm):" = "H Gap (mm):";
+"Mezera V (mm):" = "V Gap (mm):";
+"Měřítko fit (%):" = "Fit scale (%):";
+"Měřítko:" = "Scale:";
+"Automaticky rozloží obrázky do mřížky, která rovnoměrně vyplní stránku" = "Automatically arranges images in a grid that evenly fills the page";
+"Cyklicky opakuje obrázky, dokud nejsou vyplněny všechny buňky na každé stránce" = "Cyclically repeats images until all cells on each page are filled";
+"Doplnit kopie pro plné stránky" = "Add copies for full pages";
+"Fit to Frame (přizpůsobit buňce)" = "Fit to Frame";
+"Vyplnit stránku rovnoměrně" = "Fill page evenly";
+"Orientace skládání" = "Folding orientation";
+"Orientace" = "Orientation";
+"Směr" = "Direction";
+"Náhled (1. list)" = "Preview (sheet 1)";
+"Náhled nedostupný" = "Preview unavailable";
+"Fit vše" = "Fit all";
+
+/* MARK: - Stitch */
+"Obrázky musí mít překrývající se oblast (doporučeno 30–50 %). Používá Apple Vision – nevyžaduje Python ani OpenCV. Pořadí = pořadí souborů v listu." = "Images must have overlapping area (30–50% recommended). Uses Apple Vision – no Python or OpenCV required. Order = file list order.";
+
+/* MARK: - Expand */
+"Plátno dokumentu se rozšíří na všech stranách o zadaný počet mm. U vektorového PDF bude vektorová grafika zachována jako vrchní vrstva." = "The document canvas will be expanded on all sides by the specified number of mm. For vector PDF, vector graphics will be preserved as the top layer.";
+"Rozšíření na každou stranu:" = "Expansion on each side:";
+"Způsob vyplnění okrajů:" = "Edge fill method:";
+"Pozadí" = "Background";
+
+/* MARK: - Drawings / OCR */
+"Zpět na náhled" = "Back to preview";
+"Zpět na náhledy" = "Back to previews";
+"Náhledy (\(visiblePhotos.count))" = "Thumbnails (\(visiblePhotos.count))";
+"Barevné stránky" = "Color pages";
+"Barva:" = "Color:";
+"Metoda" = "Method";
+"Ručně" = "Manual";
+"Automaticky" = "Automatic";
+"Automaticky detekovat barvu pozadí z rohů obrázku" = "Auto-detect background color from image corners";
+"Barva pozadí k odstranění" = "Background color to remove";
+"Barva pozadí rámečku" = "Frame background color";
+"Citlivost" = "Sensitivity";
+"Citlivost:" = "Sensitivity:";
+"Chování" = "Behavior";
+"Vlastní oblast" = "Custom region";
+"Obdélník nalezen — zobrazen v náhledu zeleně" = "Rectangle found — shown in green in preview";
+"Obdélník nenalezen" = "Rectangle not found";
+"Detekovaný úhel: \(String(format: " = "Detected angle: \(String(format: ";
+"Úhel bude detekován při zpracování." = "Angle will be detected during processing.";
+"Úhel:" = "Angle:";
+"Znovu detekovat" = "Re-detect";
+"Test spojení" = "Test connection";
+"Klikni na rámeček pro úpravu" = "Click on frame to edit";
+"Klikni 'Nahled' pro zobrazeni vysledku" = "Click 'Preview' to see result";
+"Táhni obr. pro posun výřezu" = "Drag image to pan";
+"klik = výběr · tah = lupa" = "click = select · drag = zoom";
+
+/* MARK: - Gallery */
+"Počet fotografií" = "Number of photos";
+"Mřížka" = "Grid";
+"Text pod obrázkem" = "Caption below image";
+"Automaticky z souboru" = "Auto from filename";
+
+/* MARK: - Rename */
+"Vzor názvu" = "Name pattern";
+"Oddělovač" = "Separator";
+"Číslice:" = "Digits:";
+"Zachovat původní název (bez přečíslování)" = "Keep original name (no renumbering)";
+"Offset" = "Offset";
+"bez oddělovače" = "no separator";
+"- pomlčka" = "- hyphen";
+"_ podtržítko" = "_ underscore";
+"  mezera" = "  space";
+"1 (1, 2…)" = "1 (1, 2…)";
+"2 (01, 02…)" = "2 (01, 02…)";
+"3 (001, 002…)" = "3 (001, 002…)";
+"4 (0001…)" = "4 (0001…)";
+"Použít nové pořadí" = "Apply new order";
+
+/* MARK: - Settings */
+"Tiskový okraj tiskárny (mm):" = "Printer margin (mm):";
+"Thumbnail Size: \(Int(thumbnailSize))px" = "Thumbnail Size: \(Int(thumbnailSize))px";
+"Velikost náhledů:" = "Thumbnail size:";
+"Chyba" = "Error";
+"Oznámení jsou zakázána." = "Notifications are disabled.";
+"Nepřihlášen" = "Not signed in";
+"Přihlášen k Google Drive" = "Signed in to Google Drive";
+"Nejste přihlášeni k Google." = "You are not signed in to Google.";
+"Čekám na přihlášení v prohlížeči…" = "Waiting for browser sign-in…";
+"Čekám na přihlášení..." = "Waiting for sign-in...";
+" — otevře se prohlížeč s přihlašovací stránkou Google" = " — a browser will open with the Google sign-in page";
+"1. Vytvoř OAuth 2.0 Desktop App klienta v Google Cloud Console" = "1. Create an OAuth 2.0 Desktop App client in Google Cloud Console";
+"2. Zkopíruj Client ID a Client Secret sem" = "2. Copy the Client ID and Client Secret here";
+"4. Soubory se nahrají na Drive, převedou do PDF a ihned smažou" = "4. Files will be uploaded to Drive, converted to PDF, and immediately deleted";
+"CloudConvert je placená online služba. Každá konverze spotřebuje kredity z vašeho účtu." = "CloudConvert is a paid online service. Each conversion uses credits from your account.";
+"API klíč se ukládá lokálně v nastavení aplikace. Pro citlivé produkční nasazení doporučujeme použít Keychain." = "The API key is stored locally in app settings. For sensitive production deployments, we recommend using Keychain.";
+"API klíč:" = "API key:";
+"• Free tier: 250 requestů/měsíc zdarma" = "• Free tier: 250 requests/month free";
+"• Klíč se ukládá lokálně v nastavení aplikace" = "• Key is stored locally in app settings";
+"• Potřebuješ pouze Public Key (začíná project_public_...)" = "• You only need the Public Key (starts with project_public_...)";
+"• Registrace na: https://developer.ilovepdf.com/" = "• Register at: https://developer.ilovepdf.com/";
+"• Secret Key se nepoužívá pro API (jen pro webhooks)" = "• Secret Key is not used for API (only for webhooks)";
+"ℹ️ Secret Key není potřeba - API používá pouze Public Key" = "ℹ️ Secret Key is not needed - API only uses the Public Key";
+"Vytvořit / spravovat API klíč" = "Create / manage API key";
+"Získat API klíče" = "Get API keys";
+"Jak to funguje" = "How it works";
+
+/* MARK: - PDF Info */
+"PDF Information" = "PDF Information";
+"File Information" = "File Information";
+"Box Information" = "Box Information";
+"PDF Box" = "PDF Box";
+"PDF Box Type" = "PDF Box Type";
+"Selected box not available on this page" = "Selected box not available on this page";
+"Strana \(appState.quickLookCurrentPage + 1) / \(file.pageCount)" = "Page \(appState.quickLookCurrentPage + 1) / \(file.pageCount)";
+"Str. \(pageIndex + 1)" = "Pg. \(pageIndex + 1)";
+"Rámeček" = "Frame";
+"Rámeček = stránka: \(w) × \(h) mm (1:1)" = "Frame = page: \(w) × \(h) mm (1:1)";
+
+/* MARK: - Buttons (universal) */
+"Zavřít" = "Close";
+"Zavřít (mezerník)" = "Close (Space)";
+"Zrušit" = "Cancel";
+"Použít nové pořadí" = "Apply New Order";
+"Zpracovat vše" = "Process All";
+"Zpět na náhled" = "Back to Preview";
+"Detail" = "Detail";
+"First" = "First";
+"Apply to all pages" = "Apply to all pages";
+"Apply" = "Apply";
+"Convert" = "Convert";
+"Compress" = "Compress";
+"Uložit \(actualCount) fotografií" = "Save \(actualCount) photos";
+"Auto-scroll" = "Auto-scroll";
+"Toggle thumbnails" = "Toggle thumbnails";
+"Close Quick Look" = "Close Quick Look";
+"Close inline Quick Look" = "Close inline Quick Look";
+"Collapse preview" = "Collapse preview";
+"Collapse" = "Collapse";
+"Browse Files" = "Browse Files";
+"Preview file" = "Preview file";
+"Toggle Preview" = "Toggle Preview";
+"Toggle preview panel (⌘I)" = "Toggle preview panel (⌘I)";
+"Add files (⌘O)" = "Add files (⌘O)";
+"Center on page" = "Center on page";
+"Copy to Clipboard" = "Copy to Clipboard";
+"Display" = "Display";
+"Fit" = "Fit";
+"Fill" = "Fill";
+"Current Settings" = "Current Settings";
+"Preset Size" = "Preset Size";
+"Save Printer Preset" = "Save Printer Preset";
+"Název presetu" = "Preset name";
+
+/* MARK: - Misc labels */
+"Tloušťka" = "Thickness";
+"Tón" = "Tone";
+"Zarovnání" = "Alignment";
+"Výstup" = "Output";
+"Výstupní formát" = "Output format";
+"Výška (mm)" = "Height (mm)";
+"Šířka (mm)" = "Width (mm)";
+"Délka (mm):" = "Length (mm):";
+"Délka" = "Length";
+"Vzhled:" = "Appearance:";
+"Zobrazení" = "Display";
+"Velikost obrázku" = "Image size";
+"Režim" = "Mode";
+"Obrázky musí mít překrývající se oblast" = "Images must have overlapping area";
+"Fit Mode" = "Fit Mode";
+"Advanced Options" = "Advanced Options";
+"Vložit prázdnou stránku za" = "Insert blank page after";
+
+/* MARK: - Page/file counts (interpolated – used in Text() with LocalizedStringKey) */
+"\(fi.pageCount) stran" = "\(fi.pageCount) pages";
+"\(file.pageCount) stránek" = "\(file.pageCount) pages";
+"\(imageFiles.count) obrázků ke spojení" = "\(imageFiles.count) images to stitch";
+"\(imageFiles.count) obrázků" = "\(imageFiles.count) images";
+"\(selectedPages.count) vybraných stránek" = "\(selectedPages.count) pages selected";
+"\(selectedFiles.count) soubor(ů)" = "\(selectedFiles.count) file(s)";
+"\(selectedFiles.count) souborů" = "\(selectedFiles.count) files";
+"\(pc) stránek" = "\(pc) pages";
+
+/* MARK: - Rotation */
+"↺ 90° CCW" = "↺ 90° CCW";
+"↻ 90° CW" = "↻ 90° CW";
+"180°" = "180°";
+
+/* MARK: - Quick Look */
+"Strana \(currentPage + 1) / \(f.pageCount)" = "Page \(currentPage + 1) / \(f.pageCount)";
+"Strana \(previewPage + 1) / \(total)" = "Page \(previewPage + 1) / \(total)";
+"Page \(currentPage + 1) of \(file.pageCount)" = "Page \(currentPage + 1) of \(file.pageCount)";
+
+/* MARK: - Notifications / Warnings */
+"Vyžaduje macOS 12+" = "Requires macOS 12+";
+"Žádné fotografie.\nZkus zvýšit citlivost nebo upravit min./max. velikost." = "No photos found.\nTry increasing sensitivity or adjusting min./max. size.";
+
+/* MARK: - DPI options */
+"150 DPI (náhled)" = "150 DPI (preview)";
+"300 DPI (standard)" = "300 DPI (standard)";
+"600 DPI (vysoká kvalita)" = "600 DPI (high quality)";
+"12 (výchozí)" = "12 (default)";
+
+/* MARK: - InDesign */
+"Vytvoří InDesign dokument se stejným rozložením (každý obrázek jako samostatný objekt)" = "Creates an InDesign document with the same layout (each image as a separate object)";
+
+/* MARK: - Settings section headers */
+"Výchozí tiskárna" = "Default Printer";
+"Zobrazení" = "Display";
+"Chování" = "Behavior";
+"Oznámení" = "Notifications";
+"Komprese" = "Compression";
+"Rasterizace" = "Rasterization";
+"Přihlášení" = "Sign In";
+"OAuth přihlašovací údaje" = "OAuth Credentials";
+"Přihlašovací údaje" = "Credentials";
+"Informace" = "Information";
+"Test spojení" = "Connection Test";
+
+/* MARK: - Settings buttons & labels */
+"Odhlásit" = "Sign Out";
+"Přihlásit se…" = "Sign In…";
+"Ověřit API klíč" = "Verify API Key";
+"Ověřit Public Key" = "Verify Public Key";
+"Otevřít Google Cloud Console" = "Open Google Cloud Console";
+"Nejdříve zadejte Client ID a Client Secret níže." = "Please enter Client ID and Client Secret below first.";
+"Povolit oznámení" = "Enable Notifications";
+"Skrýt" = "Hide";
+"Zobrazit" = "Show";
+"Skrýt API klíč" = "Hide API Key";
+"Zobrazit API klíč" = "Show API Key";
+"Skrýt klíč" = "Hide Key";
+"Zobrazit klíč" = "Show Key";
+"Jazyk:" = "Language:";
+"HTTP \(code) – neplatný klíč?" = "HTTP \(code) – invalid key?";
+"HTTP \(code) – neplatné klíče?" = "HTTP \(code) – invalid keys?";
+
+/* MARK: - Version / About */
+"© 2024 PrintManager. All rights reserved." = "© 2024 PrintManager. All rights reserved.";

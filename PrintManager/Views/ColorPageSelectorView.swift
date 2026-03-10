@@ -47,10 +47,10 @@ struct ColorPageSelectorView: View {
                 // Statistiky
                 HStack(spacing: 16) {
                     Label("\(colorPages.count) barevných", systemImage: "photo")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                         .foregroundColor(.accentColor)
                     Label("\(pageCount - colorPages.count) šedých", systemImage: "circle.lefthalf.filled")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                         .foregroundColor(.secondary)
                 }
 
@@ -61,20 +61,20 @@ struct ColorPageSelectorView: View {
                     colorPages = Set(0..<pageCount)
                 }
                 .buttonStyle(.bordered)
-                .font(.system(size: 12))
+                .font(DS.Typography.subheadline)
 
                 Button("Zrušit vše") {
                     colorPages = []
                 }
                 .buttonStyle(.bordered)
-                .font(.system(size: 12))
+                .font(DS.Typography.subheadline)
 
                 Divider().frame(height: 20)
 
                 // Velikost miniatur
                 HStack(spacing: 4) {
                     Image(systemName: "photo")
-                        .font(.system(size: 10))
+                        .font(DS.Typography.caption2)
                         .foregroundColor(.secondary)
                     Slider(value: $thumbSize, in: 80...200, step: 10)
                         .frame(width: 80)
@@ -85,7 +85,7 @@ struct ColorPageSelectorView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(DS.Colors.windowBackground)
 
             Divider()
 
@@ -109,7 +109,7 @@ struct ColorPageSelectorView: View {
                 }
                 .padding(12)
             }
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(DS.Colors.controlBackground)
 
             Divider()
 
@@ -124,7 +124,7 @@ struct ColorPageSelectorView: View {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7)
                         Text("Zpracovávám stránky…")
-                            .font(.system(size: 12))
+                            .font(DS.Typography.subheadline)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -142,7 +142,7 @@ struct ColorPageSelectorView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(DS.Colors.windowBackground)
         }
         .frame(minWidth: 720, minHeight: 520)
         .onAppear { loadThumbnails() }
@@ -200,14 +200,14 @@ struct PageThumbCell: View {
                             )
                     }
                 }
-                .cornerRadius(4)
+                .cornerRadius(DS.Radius.small)
 
                 // Šedý překryv u nebarevných stránek
                 if !isColor {
                     Rectangle()
                         .fill(Color.gray.opacity(0.55))
                         .aspectRatio(0.707, contentMode: .fit)
-                        .cornerRadius(4)
+                        .cornerRadius(DS.Radius.small)
                     Image(systemName: "circle.lefthalf.filled")
                         .font(.system(size: 18))
                         .foregroundColor(.white.opacity(0.85))
@@ -232,7 +232,7 @@ struct PageThumbCell: View {
             )
 
             Text("Str. \(pageIndex + 1)")
-                .font(.system(size: 10))
+                .font(DS.Typography.caption2)
                 .foregroundColor(isColor ? .primary : .secondary)
         }
         .contentShape(Rectangle())

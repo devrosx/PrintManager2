@@ -32,7 +32,12 @@ class PDFService {
             
             let outputURL = outputDir.appendingPathComponent("\(baseName)_page\(pageIndex + 1).pdf")
             guard newDocument.write(to: outputURL) else {
-                throw PDFError.writeFailed("Nelze zapsat stránku \(pageIndex + 1)")
+                let fallbackData = newDocument.dataRepresentation() ?? Data()
+                throw PDFError.writeFailedWithFallback(
+                    message: "Nelze zapsat stránku \(pageIndex + 1)",
+                    data: fallbackData,
+                    suggestedName: outputURL.lastPathComponent
+                )
             }
             outputURLs.append(outputURL)
         }
@@ -69,7 +74,12 @@ class PDFService {
         let outputURL = urls[0].deletingLastPathComponent()
             .appendingPathComponent("merged_\(Date().timeIntervalSince1970).pdf")
         guard mergedDocument.write(to: outputURL) else {
-            throw PDFError.writeFailed("Nelze zapsat sloučené PDF")
+            let fallbackData = mergedDocument.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat sloučené PDF",
+                data: fallbackData,
+                suggestedName: outputURL.lastPathComponent
+            )
         }
 
         return outputURL
@@ -771,9 +781,12 @@ class PDFService {
             // executeGSCommand nastavuje executableURL na cestu ke GS,
             // argumenty tedy NESMÍ obsahovat "gs" jako první prvek.
             // ColorConversionStrategy je string parametr → -s (ne -d) bez lomítka.
+            // ColorConversionStrategy=Gray → GS nejdřív převede vše na šedou,
+            // ProcessColorModel=/DeviceCMYK → šedá se pak mapuje jako K-only
+            // (C=M=Y=0, K=hodnota). DeviceGray by Acrobat zobrazoval ve všech kanálech.
             try await executeGSCommand([
                 "-sDEVICE=pdfwrite",
-                "-dProcessColorModel=/DeviceGray",
+                "-dProcessColorModel=/DeviceCMYK",
                 "-sColorConversionStrategy=Gray",
                 "-sColorConversionStrategyForImages=Gray",
                 "-dUCRandBGInfo=/Remove",
@@ -798,8 +811,205 @@ class PDFService {
         let outputURL = url.deletingLastPathComponent()
             .appendingPathComponent("\(baseName)_selective_gray.pdf")
         guard merged.write(to: outputURL) else {
-            throw PDFError.writeFailed("Nelze zapsat výstupní PDF")
+            let fallbackData = merged.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat výstupní PDF",
+                data: fallbackData,
+                suggestedName: outputURL.lastPathComponent
+            )
         }
+        return outputURL
+    }
+
+    // MARK: - Insert Blank Page
+
+    /// Vloží prázdnou stránku (stejné rozměry jako stránka na indexu `afterPageIndex`) za danou stránku.
+    /// Přepíše původní soubor.
+    func insertBlankPage(url: URL, afterPageIndex: Int) async throws {
+        guard let doc = PDFDocument(url: url) else { throw PDFError.invalidPDF }
+        guard afterPageIndex >= 0 && afterPageIndex < doc.pageCount,
+              let refPage = doc.page(at: afterPageIndex) else {
+            throw PDFError.operationFailed("Stránka \(afterPageIndex + 1) neexistuje")
+        }
+
+        let pageSize = refPage.bounds(for: .mediaBox).size
+
+        // Vytvoř prázdnou stránku pomocí CGContext (Core Graphics → PDF data)
+        let blankData = NSMutableData()
+        var mediaBox = CGRect(origin: .zero, size: pageSize)
+        guard let consumer = CGDataConsumer(data: blankData as CFMutableData),
+              let ctx = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            throw PDFError.operationFailed("Nelze vytvořit prázdnou stránku")
+        }
+        ctx.beginPDFPage(nil)
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(mediaBox)
+        ctx.endPDFPage()
+        ctx.closePDF()
+
+        guard let blankDoc = PDFDocument(data: blankData as Data),
+              let blankPage = blankDoc.page(at: 0) else {
+            throw PDFError.operationFailed("Nelze načíst vytvořenou prázdnou stránku")
+        }
+
+        doc.insert(blankPage, at: afterPageIndex + 1)
+
+        guard doc.write(to: url) else {
+            let fallbackData = doc.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat PDF s vloženou prázdnou stránkou",
+                data: fallbackData,
+                suggestedName: url.lastPathComponent
+            )
+        }
+    }
+
+    // MARK: - Page Operations (Rotate, Delete, Extract, Reorder)
+
+    /// Otočí vybrané stránky v PDF o 90° (clockwise nebo counter-clockwise)
+    /// POZOR: Přepíše původní soubor!
+    func rotatePages(url: URL, pageIndices: [Int], degrees: Int) async throws {
+        guard let pdfDocument = PDFDocument(url: url) else {
+            throw PDFError.invalidPDF
+        }
+
+        // Validace
+        let rotation = degrees == 90 ? 90 : (degrees == -90 ? 270 : 0)
+        guard rotation != 0 else {
+            throw PDFError.operationFailed("Neplatný úhel rotace")
+        }
+
+        // Otočit stránky
+        for pageIndex in pageIndices {
+            guard pageIndex >= 0 && pageIndex < pdfDocument.pageCount,
+                  let page = pdfDocument.page(at: pageIndex) else { continue }
+            page.rotation = (page.rotation + rotation) % 360
+        }
+
+        // Uložit přes původní soubor
+        guard pdfDocument.write(to: url) else {
+            let fallbackData = pdfDocument.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat otočené PDF",
+                data: fallbackData,
+                suggestedName: url.lastPathComponent
+            )
+        }
+    }
+
+    /// Smaže vybrané stránky z PDF
+    /// POZOR: Přepíše původní soubor!
+    func deletePages(url: URL, pageIndices: [Int]) async throws {
+        guard let pdfDocument = PDFDocument(url: url) else {
+            throw PDFError.invalidPDF
+        }
+
+        guard pageIndices.count < pdfDocument.pageCount else {
+            throw PDFError.operationFailed("Nelze smazat všechny stránky")
+        }
+
+        // Seřadit sestupně, abychom mohli mazat bez ovlivnění indexů
+        let sortedIndices = pageIndices.sorted(by: >)
+
+        for pageIndex in sortedIndices {
+            guard pageIndex >= 0 && pageIndex < pdfDocument.pageCount else { continue }
+            pdfDocument.removePage(at: pageIndex)
+        }
+
+        // Uložit přes původní soubor
+        guard pdfDocument.write(to: url) else {
+            let fallbackData = pdfDocument.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat PDF po smazání stránek",
+                data: fallbackData,
+                suggestedName: url.lastPathComponent
+            )
+        }
+    }
+
+    /// Přeuspořádá stránky v PDF podle nového pořadí
+    /// POZOR: Přepíše původní soubor!
+    /// - Parameters:
+    ///   - url: URL souboru
+    ///   - newOrder: Pole indexů v novém pořadí (např. [2, 0, 1] = strana 3, 1, 2)
+    func reorderPages(url: URL, newOrder: [Int]) async throws {
+        guard let pdfDocument = PDFDocument(url: url) else {
+            throw PDFError.invalidPDF
+        }
+
+        guard newOrder.count == pdfDocument.pageCount else {
+            throw PDFError.operationFailed("Počet stránek v novém pořadí neodpovídá")
+        }
+
+        // Validace - všechny indexy musí být unikátní a v rozsahu
+        let uniqueIndices = Set(newOrder)
+        guard uniqueIndices.count == newOrder.count else {
+            throw PDFError.operationFailed("Duplicitní indexy v novém pořadí")
+        }
+
+        guard newOrder.allSatisfy({ $0 >= 0 && $0 < pdfDocument.pageCount }) else {
+            throw PDFError.operationFailed("Index mimo rozsah")
+        }
+
+        // Vytvoř nový dokument s přeuspořádanými stránkami
+        let newDocument = PDFDocument()
+
+        for (newIndex, oldIndex) in newOrder.enumerated() {
+            guard let page = pdfDocument.page(at: oldIndex) else { continue }
+            newDocument.insert(page, at: newIndex)
+        }
+
+        // Uložit přes původní soubor
+        guard newDocument.write(to: url) else {
+            let fallbackData = newDocument.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat přeuspořádané PDF",
+                data: fallbackData,
+                suggestedName: url.lastPathComponent
+            )
+        }
+    }
+
+    /// Extrahuje vybrané stránky do nového PDF
+    func extractPages(url: URL, pageIndices: [Int]) async throws -> URL {
+        guard let pdfDocument = PDFDocument(url: url) else {
+            throw PDFError.invalidPDF
+        }
+
+        guard !pageIndices.isEmpty else {
+            throw PDFError.operationFailed("Žádné stránky k extrakci")
+        }
+
+        let newDocument = PDFDocument()
+        let sortedIndices = pageIndices.sorted()
+
+        for (newIndex, pageIndex) in sortedIndices.enumerated() {
+            guard pageIndex >= 0 && pageIndex < pdfDocument.pageCount,
+                  let page = pdfDocument.page(at: pageIndex) else { continue }
+            newDocument.insert(page, at: newIndex)
+        }
+
+        guard newDocument.pageCount > 0 else {
+            throw PDFError.operationFailed("Žádné stránky nebyly extrahovány")
+        }
+
+        // Uložit
+        let pageRange = sortedIndices.count > 1
+            ? "pages_\(sortedIndices.first! + 1)-\(sortedIndices.last! + 1)"
+            : "page_\(sortedIndices.first! + 1)"
+
+        let outputURL = url.deletingLastPathComponent()
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_\(pageRange).pdf")
+
+        guard newDocument.write(to: outputURL) else {
+            let fallbackData = newDocument.dataRepresentation() ?? Data()
+            throw PDFError.writeFailedWithFallback(
+                message: "Nelze zapsat extrahované PDF",
+                data: fallbackData,
+                suggestedName: outputURL.lastPathComponent
+            )
+        }
+
         return outputURL
     }
 }
@@ -812,6 +1022,8 @@ enum PDFError: LocalizedError {
     case ocrFailed
     case operationFailed(String)
     case writeFailed(String)
+    /// Zápis selhal a data jsou přiložena pro záchranný dialog "Uložit jako"
+    case writeFailedWithFallback(message: String, data: Data, suggestedName: String)
 
     var errorDescription: String? {
         switch self {
@@ -824,6 +1036,8 @@ enum PDFError: LocalizedError {
         case .operationFailed(let message):
             return "PDF operation failed: \(message)"
         case .writeFailed(let message):
+            return "Zápis PDF selhal: \(message)"
+        case .writeFailedWithFallback(let message, _, _):
             return "Zápis PDF selhal: \(message)"
         }
     }

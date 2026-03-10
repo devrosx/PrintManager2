@@ -26,14 +26,16 @@ class OfficeConversionService {
     var isAvailable: Bool { findSoffice() != nil }
 
     /// Converts a single Office document to PDF.
-    /// Runs `soffice --headless --convert-to pdf --outdir <tmp> <file>`.
-    /// - Returns: URL of the generated PDF in a temporary directory.
+    /// Runs `soffice --headless --convert-to pdf --outdir <inputDir> <file>`.
+    /// Výstupní PDF se uloží do stejné složky jako zdrojový soubor.
+    /// - Returns: URL vygenerovaného PDF.
     func convertToPDF(url: URL) async throws -> URL {
         guard let soffice = findSoffice() else {
             throw OfficeConversionError.sofficeNotFound
         }
 
-        let outputDir = try makeOutputDir()
+        // Výstupní složka = složka zdrojového souboru; fallback na /tmp pokud není přístupná
+        let outputDir = resolveOutputDir(for: url)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -53,13 +55,16 @@ class OfficeConversionService {
 
     // MARK: - Private
 
-    private func makeOutputDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
+    /// Vrátí složku zdrojového souboru pokud je zapisovatelná, jinak /tmp.
+    private func resolveOutputDir(for inputURL: URL) -> URL {
+        let sourceDir = inputURL.deletingLastPathComponent()
+        if FileManager.default.isWritableFile(atPath: sourceDir.path) {
+            return sourceDir
+        }
+        let fallback = FileManager.default.temporaryDirectory
             .appendingPathComponent("PrintManager-Office", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: dir, withIntermediateDirectories: true
-        )
-        return dir
+        try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
+        return fallback
     }
 
     private func runSoffice(soffice: String, inputURL: URL, outputDir: URL) throws -> URL {

@@ -2,84 +2,25 @@
 //  DrawingsService.swift
 //  PrintManager
 //
+//  Service for processing technical drawings with image manipulation pipeline
+//
 
 import CoreImage
 import Vision
 import PDFKit
 import AppKit
 
-// MARK: - Modely nastavení
-
-struct DrawingsSettings: Equatable {
-    var applyThreshold: Bool = true
-    var thresholdMode: ThresholdMode = .auto
-    var thresholdValue: Double = 0.5
-    var brightnessBoost: Double = 0.1
-    var contrastBoost: Double = 0.3
-
-    var applyCrop: Bool = false
-    var cropMode: CropMode = .autoDetect
-    var cropTopMargin: Double = 0.02
-    var cropBottomMargin: Double = 0.02
-    var cropLeftMargin: Double = 0.02
-    var cropRightMargin: Double = 0.02
-
-    var applyDeskew: Bool = false
-    var deskewWithCrop: Bool = true
-
-    var applyRotation: Bool = false
-    var rotationSteps: Int = 1
-
-    var applyAlignment: Bool = false
-    var alignmentFormat: PaperFormat = .a4
-    var alignmentMode: AlignmentMode = .fit
-
-    var applyColorConversion: Bool = false
-    var colorMode: ColorMode = .grayscale
-
-    var applyNoiseReduction: Bool = false
-    var noiseLevel: Double = 0.02
-    var noiseSharpness: Double = 0.40
-
-    // OCR region (top-left origin, 0-1 normalized)
-    var applyOCR: Bool = false
-    var ocrUseCustomRegion: Bool = false
-    var ocrRegionLeft: Double = 0.75
-    var ocrRegionTop: Double = 0.75
-    var ocrRegionWidth: Double = 0.25
-    var ocrRegionHeight: Double = 0.25
-}
-
-enum ThresholdMode: Equatable { case auto, manual }
-enum PaperFormat: String, CaseIterable, Equatable {
-    case a5 = "A5"; case a4 = "A4"; case a3 = "A3"
-    case a2 = "A2"; case letter = "Letter"
-    var sizeAt300DPI: CGSize {
-        switch self {
-        case .a5:     return CGSize(width: 1748,  height: 2480)
-        case .a4:     return CGSize(width: 2480,  height: 3508)
-        case .a3:     return CGSize(width: 3508,  height: 4961)
-        case .a2:     return CGSize(width: 4961,  height: 7016)
-        case .letter: return CGSize(width: 2550,  height: 3300)
-        }
-    }
-}
-enum AlignmentMode: String, CaseIterable, Equatable { case fit = "Fit", fill = "Fill" }
-enum ColorMode: String, CaseIterable, Equatable {
-    case bitmap = "Bitmapa"; case grayscale = "Stupně šedi"; case color = "Barevné"
-}
-enum CropMode: String, CaseIterable, Equatable {
-    case autoDetect    = "Automaticky"
-    case manualMargins = "Ručně"
-}
-
 // MARK: - DrawingsService
 
-actor DrawingsService {
+final class DrawingsService: @unchecked Sendable {
     private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
-    // MARK: Veřejné API
+    // MARK: - Public API
 
+    /// Process a file (image or PDF) with the specified settings
+    /// - Parameters:
+    ///   - url: URL of the file to process
+    ///   - settings: Processing settings to apply
     func process(url: URL, settings: DrawingsSettings) async throws {
         if url.pathExtension.lowercased() == "pdf" {
             try await processPDF(url: url, settings: settings)
@@ -88,43 +29,47 @@ actor DrawingsService {
         }
     }
 
-    /// Preview — renderuje v plné kvalitě, ořízne na `maxSize` až na konci.
+    /// Generate a preview image with applied settings (full quality, downsampled at end)
+    /// - Parameters:
+    ///   - url: URL of the file to preview
+    ///   - settings: Processing settings to apply
+    ///   - maxSize: Maximum size for the final preview
+    /// - Returns: Preview image with settings applied
     func previewImage(url: URL, settings: DrawingsSettings, maxSize: CGSize) async throws -> NSImage {
         let ext = url.pathExtension.lowercased()
         let ciImage: CIImage
 
         if ext == "pdf" {
-            guard let doc = PDFDocument(url: url), let page = doc.page(at: 0) else {
+            // Use unified PDF rendering service
+            guard let rendered = await PDFRenderingService.shared.renderPageToCIImage(
+                url: url,
+                pageIndex: 0,
+                quality: .preview
+            ) else {
                 throw DrawingsError.unsupportedFile
             }
-            // Renderujeme ve vysokém rozlišení (min 150 DPI)
-            let pdfPts = page.bounds(for: .mediaBox).size
-            let targetH: CGFloat = max(maxSize.height, 1600)
-            let scale = min(targetH / pdfPts.height, 300 / 72)
-            let rSize = CGSize(width: pdfPts.width * scale, height: pdfPts.height * scale)
-            let cs = CGColorSpaceCreateDeviceRGB()
-            guard let ctx = CGContext(data: nil, width: Int(rSize.width), height: Int(rSize.height),
-                                       bitsPerComponent: 8, bytesPerRow: 0, space: cs,
-                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-                throw DrawingsError.processingFailed("PDF render context")
-            }
-            ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-            ctx.fill(CGRect(origin: .zero, size: rSize))
-            ctx.saveGState()
-            ctx.translateBy(x: 0, y: rSize.height)
-            ctx.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: ctx)
-            ctx.restoreGState()
-            guard let cg = ctx.makeImage() else { throw DrawingsError.processingFailed("PDF render") }
-            ciImage = CIImage(cgImage: cg)
+            ciImage = rendered
         } else {
-            guard let cg = loadCGImage(from: url) else { throw DrawingsError.unsupportedFile }
-            ciImage = CIImage(cgImage: cg)
+            // Use unified image loading service
+            guard let cgImage = await ImageLoadingService.loadCGImage(from: url, respectOrientation: true) else {
+                throw DrawingsError.unsupportedFile
+            }
+            ciImage = CIImage(cgImage: cgImage)
         }
 
-        var result = applySyncPipeline(ciImage: ciImage, settings: settings)
+        var workingImage = ciImage
 
-        if settings.applyCrop,
+        // Ořez provést PŘED threshold - na původním obrázku pro lepší detekci
+        if settings.applyCrop && settings.cropMode == .autoDetect,
+           let cg = Self.ciContext.createCGImage(workingImage, from: workingImage.extent) {
+            let cropped = applyCropToCG(cg, settings: settings)
+            workingImage = CIImage(cgImage: cropped)
+        }
+
+        var result = applySyncPipeline(ciImage: workingImage, settings: settings)
+
+        // Ruční ořez (s margin) může zůstat na konci
+        if settings.applyCrop && settings.cropMode == .manualMargins,
            let cg = Self.ciContext.createCGImage(result, from: result.extent) {
             let cropped = applyCropToCG(cg, settings: settings)
             result = CIImage(cgImage: cropped)
@@ -133,8 +78,9 @@ actor DrawingsService {
         return try downsampleToNSImage(ciImage: result, maxSize: maxSize)
     }
 
-    // MARK: Dílčí operace
+    // MARK: - Image Processing Operations
 
+    /// Apply threshold filter with brightness and contrast adjustments
     func applyThreshold(ciImage: CIImage, settings: DrawingsSettings) -> CIImage {
         var img = ciImage
         if settings.brightnessBoost != 0 || settings.contrastBoost != 0,
@@ -152,6 +98,9 @@ actor DrawingsService {
         return img
     }
 
+    /// Detect document skew angle using Vision framework
+    /// - Parameter cgImage: Image to analyze
+    /// - Returns: Detected angle in degrees (negative = clockwise)
     func detectDeskewAngle(cgImage: CGImage) async throws -> Double {
         try await withCheckedThrowingContinuation { cont in
             let req = VNDetectRectanglesRequest { r, e in
@@ -167,6 +116,12 @@ actor DrawingsService {
         }
     }
 
+    /// Apply deskew transformation to straighten rotated documents
+    /// - Parameters:
+    ///   - ciImage: Image to deskew
+    ///   - angle: Rotation angle in degrees
+    ///   - withCrop: Whether to crop black corners after rotation
+    /// - Returns: Deskewed image
     func deskew(ciImage: CIImage, angle: Double, withCrop: Bool) -> CIImage {
         guard abs(angle) > 0.05 else { return ciImage }
         var img = ciImage.transformed(by: CGAffineTransform(rotationAngle: CGFloat(-angle * .pi / 180)))
@@ -179,12 +134,23 @@ actor DrawingsService {
         return img.cropped(to: CGRect(x: (w - cw) / 2, y: (h - ch) / 2, width: cw, height: ch))
     }
 
+    /// Rotate image by 90-degree increments
+    /// - Parameters:
+    ///   - ciImage: Image to rotate
+    ///   - steps: Number of 90-degree clockwise rotations (negative for counter-clockwise)
+    /// - Returns: Rotated image
     func rotate90(ciImage: CIImage, steps: Int) -> CIImage {
         var img = ciImage
         for _ in 0..<(((steps % 4) + 4) % 4) { img = rotateOnce90CW(img) }
         return img
     }
 
+    /// Align image to specific paper format with fit or fill mode
+    /// - Parameters:
+    ///   - cgImage: Source image
+    ///   - format: Target paper format
+    ///   - mode: Fit (preserve entire image) or Fill (may crop)
+    /// - Returns: Aligned image on white background
     func alignToFormat(cgImage: CGImage, format: PaperFormat, mode: AlignmentMode) -> CGImage {
         let t = format.sizeAt300DPI
         let s = mode == .fit
@@ -201,6 +167,12 @@ actor DrawingsService {
         return ctx.makeImage()!
     }
 
+    /// Apply noise reduction filter
+    /// - Parameters:
+    ///   - ciImage: Source image
+    ///   - level: Noise reduction intensity
+    ///   - sharpness: Sharpness preservation level
+    /// - Returns: Noise-reduced image
     func reduceNoise(ciImage: CIImage, level: Double, sharpness: Double) -> CIImage {
         guard let f = CIFilter(name: "CINoiseReduction") else { return ciImage }
         f.setValue(ciImage, forKey: kCIInputImageKey)
@@ -209,7 +181,11 @@ actor DrawingsService {
         return f.outputImage ?? ciImage
     }
 
-    /// OCR — `regionOfInterest` v top-left origin (0-1). Nil = výchozí pravý dolní roh.
+    /// Perform OCR text recognition on specified region
+    /// - Parameters:
+    ///   - cgImage: Image to analyze
+    ///   - regionOfInterest: Region in top-left coordinates (0-1 normalized). Nil = default bottom-right corner
+    /// - Returns: Recognized text
     func ocrBottomRight(cgImage: CGImage, regionOfInterest: CGRect? = nil) async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             let req = VNRecognizeTextRequest { r, e in
@@ -222,10 +198,11 @@ actor DrawingsService {
             req.recognitionLanguages = ["cs", "sk", "en"]
             req.usesLanguageCorrection = true
             if let roi = regionOfInterest {
-                // Konverze z top-left (UI) do bottom-left (Vision)
+                // Convert from top-left (UI) to bottom-left (Vision) coordinates
                 req.regionOfInterest = CGRect(x: roi.minX, y: 1 - roi.maxY,
                                               width: roi.width, height: roi.height)
             } else {
+                // Default: bottom-right corner
                 req.regionOfInterest = CGRect(x: 0.75, y: 0.0, width: 0.25, height: 0.25)
             }
             let h = VNImageRequestHandler(cgImage: cgImage, options: [:])
@@ -233,39 +210,122 @@ actor DrawingsService {
         }
     }
 
-    /// Detekuje obdélník dokumentu; vrací normalized rect v top-left souřadnicích.
+    /// Detect document rectangle using Vision framework
+    /// - Parameter cgImage: Image to analyze
+    /// - Returns: Normalized rectangle in top-left coordinates (0-1), or nil if not detected
     func detectDocumentRect(cgImage: CGImage) -> CGRect? {
         let req = VNDetectRectanglesRequest()
         req.minimumSize = 0.3; req.minimumConfidence = 0.5; req.maximumObservations = 1
         try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([req])
         guard let r = req.results?.first else { return nil }
-        // Vision: y=0 dole → převod na y=0 nahoře
+        // Vision uses bottom-left origin → convert to top-left
         return CGRect(x: r.boundingBox.minX, y: 1 - r.boundingBox.maxY,
                       width: r.boundingBox.width, height: r.boundingBox.height)
     }
 
-    // MARK: Ořez
+    // MARK: - Cropping
 
+    /// Apply crop to CGImage using either auto-detect or manual margins
     func applyCropToCG(_ cgImage: CGImage, settings: DrawingsSettings) -> CGImage {
         switch settings.cropMode {
-        case .autoDetect:   return autoCropCGImage(cgImage) ?? cgImage
+        case .autoDetect:   return autoCropCGImage(cgImage, sensitivity: settings.cropSensitivity) ?? cgImage
         case .manualMargins: return manualCropCGImage(cgImage, settings: settings)
         }
     }
 
-    private func autoCropCGImage(_ cg: CGImage) -> CGImage? {
-        let req = VNDetectRectanglesRequest()
-        req.minimumSize = 0.3; req.minimumConfidence = 0.5; req.maximumObservations = 1
-        try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
-        guard let r = req.results?.first else { return nil }
-        let w = CGFloat(cg.width), h = CGFloat(cg.height)
-        let cr = CGRect(x: r.boundingBox.minX * w,
-                        y: (1 - r.boundingBox.maxY) * h,
-                        width: r.boundingBox.width * w,
-                        height: r.boundingBox.height * h)
-        return cg.cropping(to: cr)
+    /// Automatically crop image by detecting content edges
+    private func autoCropCGImage(_ cg: CGImage, sensitivity: Double) -> CGImage? {
+        let w = cg.width
+        let h = cg.height
+
+        guard w > RenderingConstants.AutoCrop.minimumDimension,
+              h > RenderingConstants.AutoCrop.minimumDimension else {
+            return nil
+        }
+
+        guard let data = cg.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else { return nil }
+
+        let bytesPerPixel = cg.bitsPerPixel / 8
+        let bytesPerRow = cg.bytesPerRow
+
+        // Zjisti průměrnou jasnost - pro určení jestli je pozadí světlé nebo tmavé
+        var totalBrightness: CGFloat = 0
+        var sampleCount = 0
+
+        // Sample at regular intervals for speed
+        for y in stride(from: 0, to: h, by: RenderingConstants.AutoCrop.sampleInterval) {
+            for x in stride(from: 0, to: w, by: RenderingConstants.AutoCrop.sampleInterval) {
+                let offset = y * bytesPerRow + x * bytesPerPixel
+                let r = CGFloat(bytes[offset]) / 255.0
+                let g = CGFloat(bytes[offset + 1]) / 255.0
+                let b = CGFloat(bytes[offset + 2]) / 255.0
+                totalBrightness += (r + g + b) / 3.0
+                sampleCount += 1
+            }
+        }
+
+        let avgBrightness = totalBrightness / CGFloat(sampleCount)
+        let isDarkBackground = avgBrightness < 0.5
+
+        // Threshold based on sensitivity (0-1)
+        // sensitivity 0 = stricter (requires stronger contrast)
+        // sensitivity 1 = looser (detects weaker content)
+        let threshold: CGFloat = 0.3 + CGFloat(1.0 - sensitivity) * 0.4
+
+        // Find any content that differs significantly from average
+        var minX = w, maxX = 0
+        var minY = h, maxY = 0
+        var foundContent = false
+
+        for y in stride(from: 0, to: h, by: RenderingConstants.AutoCrop.contentSampleInterval) {
+            for x in stride(from: 0, to: w, by: RenderingConstants.AutoCrop.contentSampleInterval) {
+                let offset = y * bytesPerRow + x * bytesPerPixel
+                let r = CGFloat(bytes[offset]) / 255.0
+                let g = CGFloat(bytes[offset + 1]) / 255.0
+                let b = CGFloat(bytes[offset + 2]) / 255.0
+                let brightness = (r + g + b) / 3.0
+
+                // Find pixels that differ enough from average brightness
+                let diff = abs(brightness - avgBrightness)
+
+                if diff > threshold {
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                    foundContent = true
+                }
+            }
+        }
+
+        guard foundContent else { return nil }
+
+        let cropWidth = maxX - minX
+        let cropHeight = maxY - minY
+
+        // Validation - crop must be smaller than original but large enough
+        guard cropWidth > RenderingConstants.AutoCrop.minimumCropDimension,
+              cropHeight > RenderingConstants.AutoCrop.minimumCropDimension else {
+            return nil
+        }
+        guard cropWidth < w - RenderingConstants.AutoCrop.detectionMargin,
+              cropHeight < h - RenderingConstants.AutoCrop.detectionMargin else {
+            return nil
+        }
+
+        // Add small margin around detected content
+        let margin = RenderingConstants.AutoCrop.detectionMargin
+        minX = max(0, minX - margin)
+        minY = max(0, minY - margin)
+        maxX = min(w, maxX + margin)
+        maxY = min(h, maxY + margin)
+
+        let cropRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        return cg.cropping(to: cropRect)
     }
 
+    /// Apply manual crop using specified margins
     private func manualCropCGImage(_ cg: CGImage, settings: DrawingsSettings) -> CGImage {
         let w = CGFloat(cg.width), h = CGFloat(cg.height)
         let x = settings.cropLeftMargin * w, y = settings.cropTopMargin * h
@@ -275,8 +335,9 @@ actor DrawingsService {
         return cg.cropping(to: CGRect(x: x, y: y, width: cw, height: ch)) ?? cg
     }
 
-    // MARK: Privátní pipeline
+    // MARK: - Processing Pipeline
 
+    /// Apply synchronous image processing pipeline (threshold, color, rotation)
     private func applySyncPipeline(ciImage: CIImage, settings: DrawingsSettings) -> CIImage {
         var img = ciImage
         if settings.applyNoiseReduction {
@@ -288,6 +349,7 @@ actor DrawingsService {
         return img
     }
 
+    /// Convert image color mode (grayscale, bitmap, or keep color)
     private func convertColor(_ img: CIImage, mode: ColorMode) -> CIImage {
         switch mode {
         case .grayscale:
@@ -311,12 +373,14 @@ actor DrawingsService {
         return img
     }
 
+    /// Rotate image 90 degrees clockwise
     private func rotateOnce90CW(_ img: CIImage) -> CIImage {
         let r = img.transformed(by: CGAffineTransform(rotationAngle: -.pi / 2))
         let e = r.extent
         return r.transformed(by: CGAffineTransform(translationX: -e.origin.x, y: -e.origin.y))
     }
 
+    /// Calculate optimal threshold using Otsu's method
     private func analyzeOtsuThreshold(_ img: CIImage) -> Double {
         guard let cg = Self.ciContext.createCGImage(img, from: img.extent) else { return 0.5 }
         let w = min(cg.width, 64), h = min(cg.height, 64)
@@ -342,10 +406,14 @@ actor DrawingsService {
         return Double(thr)/255.0
     }
 
-    // MARK: Zpracování souborů
+    // MARK: - File Processing
 
+    /// Process single image file with all enabled settings
     private func processImage(url: URL, settings: DrawingsSettings) async throws {
-        guard let cg = loadCGImage(from: url) else { throw DrawingsError.unsupportedFile }
+        // Use unified image loading service
+        guard let cg = await ImageLoadingService.loadCGImage(from: url, respectOrientation: true) else {
+            throw DrawingsError.unsupportedFile
+        }
         var ci = applySyncPipeline(ciImage: CIImage(cgImage: cg), settings: settings)
         if settings.applyDeskew, let tmp = Self.ciContext.createCGImage(ci, from: ci.extent) {
             let angle = (try? await detectDeskewAngle(cgImage: tmp)) ?? 0.0
@@ -362,24 +430,20 @@ actor DrawingsService {
         try saveImage(cgImage: out, to: url)
     }
 
+    /// Process multi-page PDF document with settings applied to each page
     private func processPDF(url: URL, settings: DrawingsSettings) async throws {
         guard let doc = PDFDocument(url: url) else { throw DrawingsError.unsupportedFile }
         let newDoc = PDFDocument()
+
         for i in 0..<doc.pageCount {
-            guard let page = doc.page(at: i) else { continue }
-            let pdfPts = page.bounds(for: .mediaBox).size
-            let scale: CGFloat = 300 / 72.0
-            let rSize = CGSize(width: pdfPts.width * scale, height: pdfPts.height * scale)
-            let cs = CGColorSpaceCreateDeviceRGB()
-            guard let ctx = CGContext(data: nil, width: Int(rSize.width), height: Int(rSize.height),
-                                       bitsPerComponent: 8, bytesPerRow: 0, space: cs,
-                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
-                  let cg = { ctx.setFillColor(CGColor(red:1,green:1,blue:1,alpha:1))
-                              ctx.fill(CGRect(origin:.zero,size:rSize))
-                              ctx.saveGState(); ctx.translateBy(x:0,y:rSize.height)
-                              ctx.scaleBy(x:scale,y:-scale); page.draw(with:.mediaBox,to:ctx)
-                              ctx.restoreGState(); return ctx.makeImage() }()
-            else { continue }
+            // Use unified PDF rendering service for high quality
+            guard let cg = await PDFRenderingService.shared.renderPageToCGImage(
+                url: url,
+                pageIndex: i,
+                quality: .high
+            ) else {
+                continue
+            }
 
             var ci = CIImage(cgImage: cg)
             ci = applySyncPipeline(ciImage: ci, settings: settings)
@@ -398,13 +462,9 @@ actor DrawingsService {
         newDoc.write(to: url)
     }
 
-    // MARK: Pomocné
+    // MARK: - Helper Methods
 
-    private func loadCGImage(from url: URL) -> CGImage? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(src, 0, nil)
-    }
-
+    /// Save CGImage to file with appropriate format
     private func saveImage(cgImage: CGImage, to url: URL) throws {
         let ext = url.pathExtension.lowercased()
         let t: CFString = ext == "png" ? "public.png" as CFString
@@ -413,10 +473,12 @@ actor DrawingsService {
         guard let dest = CGImageDestinationCreateWithURL(url as CFURL, t, 1, nil) else {
             throw DrawingsError.processingFailed("Cíl souboru")
         }
-        CGImageDestinationAddImage(dest, cgImage, [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
+        CGImageDestinationAddImage(dest, cgImage, [kCGImageDestinationLossyCompressionQuality: RenderingConstants.Compression.jpegQuality] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { throw DrawingsError.processingFailed("Uložení selhalo") }
     }
 
+    /// Downsample CIImage to NSImage with maximum size constraint
+    /// Uses high-quality Lanczos scaling when downsampling is needed
     private func downsampleToNSImage(ciImage: CIImage, maxSize: CGSize) throws -> NSImage {
         let e = ciImage.extent
         let scale = min(maxSize.width / e.width, maxSize.height / e.height, 1.0)
@@ -433,15 +495,5 @@ actor DrawingsService {
             throw DrawingsError.processingFailed("Render náhledu selhal")
         }
         return NSImage(cgImage: cg, size: CGSize(width: cg.width, height: cg.height))
-    }
-}
-
-enum DrawingsError: LocalizedError {
-    case unsupportedFile, processingFailed(String)
-    var errorDescription: String? {
-        switch self {
-        case .unsupportedFile:         return "Nepodporovaný formát souboru"
-        case .processingFailed(let m): return "Zpracování selhalo: \(m)"
-        }
     }
 }

@@ -61,7 +61,7 @@ class BlankPageService {
         }
         
         // Add blank page
-        let blankPage = createBlankPage()
+        let blankPage = try createBlankPage()
         newPDFDocument.insert(blankPage, at: pageCount)
         
         // Save the new document
@@ -74,18 +74,21 @@ class BlankPageService {
     
     // MARK: - Create Blank Page
     
-    private func createBlankPage() -> PDFPage {
+    private func createBlankPage() throws -> PDFPage {
         // Create a blank page with standard A4 size (612 x 792 points)
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
         let blankPage = PDFPage()
         blankPage.setBounds(pageRect, for: .mediaBox)
-        
+
         // Create a blank PDF with the page
         let blankPDFDocument = PDFDocument()
         blankPDFDocument.insert(blankPage, at: 0)
-        
+
         // Get the page from the document to ensure proper formatting
-        return blankPDFDocument.page(at: 0)!
+        guard let page = blankPDFDocument.page(at: 0) else {
+            throw BlankPageError.saveFailed
+        }
+        return page
     }
 }
 

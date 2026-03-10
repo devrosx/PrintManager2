@@ -29,6 +29,10 @@ struct PDFMetadata {
     // Page color analysis
     var colorPageCount: Int = 0
     var blackWhitePageCount: Int = 0
+
+    // Per-page data (naplněna při načtení metadat)
+    var pageSizes: [CGSize] = []        // velikost každé stránky v bodech (MediaBox)
+    var colorPageNumbers: Set<Int> = [] // 1-indexed čísla barevných stránek (z GS analýzy)
     
     var titleOrFilename: String {
         title ?? "Unknown"
@@ -114,10 +118,15 @@ class PDFInfoService {
             fileSize = attrs[.size] as? Int64 ?? 0
         }
         
-        // Get first page size
+        // Get first page size + all page sizes
         var pageSize = CGSize.zero
-        if let firstPage = pdfDocument.page(at: 0) {
-            pageSize = firstPage.bounds(for: .mediaBox).size
+        var pageSizes: [CGSize] = []
+        for i in 0..<pdfDocument.pageCount {
+            if let pg = pdfDocument.page(at: i) {
+                let s = pg.bounds(for: .mediaBox).size
+                pageSizes.append(s)
+                if i == 0 { pageSize = s }
+            }
         }
         
         // Check for PDF version
@@ -160,7 +169,7 @@ class PDFInfoService {
         // Linearization is not directly available in PDFKit, set to false
         let isLinearized = false
         
-        return PDFMetadata(
+        var meta = PDFMetadata(
             title: attributes[PDFDocumentAttribute.titleAttribute] as? String,
             author: attributes[PDFDocumentAttribute.authorAttribute] as? String,
             subject: attributes[PDFDocumentAttribute.subjectAttribute] as? String,
@@ -178,5 +187,7 @@ class PDFInfoService {
             pageSize: pageSize,
             fileSize: fileSize
         )
+        meta.pageSizes = pageSizes
+        return meta
     }
 }

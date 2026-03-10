@@ -59,10 +59,10 @@ struct ModernToolbar: ToolbarContent {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(6)
+            .padding(.horizontal, DS.Spacing.small)
+            .padding(.vertical, DS.Spacing.xxSmall)
+            .background(DS.Colors.controlBackground)
+            .cornerRadius(DS.Radius.small)
         }
         
         // PDF Actions
@@ -70,6 +70,7 @@ struct ModernToolbar: ToolbarContent {
             Menu {
                 Button("Combine PDF") { appState.mergePDFs() }
                 Button("Split PDF") { appState.splitPDF() }
+                Button("Tile PDF…") { appState.tilePDFAction() }
                 Divider()
                 Button("Compress PDF") { appState.compressPDF() }
                 Button("Rasterize PDF") { appState.rasterizePDF() }
@@ -78,15 +79,33 @@ struct ModernToolbar: ToolbarContent {
                 Divider()
                 Button("PDF Info") { appState.showPDFInfo() }
                 Divider()
+                Button("Imposition...") { appState.impositionPDF() }
+                Divider()
+                Button("Expand (Bleed)...") { appState.expandFileAction() }
+                Divider()
                 Button("Convert to Gray") { appState.convertToGray() }
                 Button("Flatten Transparency") { appState.flattenTransparency() }
                 Button("Fix PDF") { appState.fixPDF() }
+                Divider()
+                Button("Watermark…") { appState.openWatermarkDialog() }
             } label: {
                 Label("PDF", systemImage: "doc.fill")
             }
             .disabled(appState.selectedFiles.isEmpty)
         }
         
+        // Image Actions
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                Button("Stitch (Panorama)…") { appState.openStitchDialog() }
+                Divider()
+                Button("Create Gallery…")    { appState.openGalleryDialog() }
+            } label: {
+                Label("Image", systemImage: "photo")
+            }
+            .disabled(!hasSelectedImageFiles)
+        }
+
         // Office Conversion
         ToolbarItem(placement: .automatic) {
             Menu {
@@ -131,17 +150,23 @@ struct ModernToolbar: ToolbarContent {
         // Settings
         ToolbarItem(placement: .automatic) {
             Button(action: {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                appState.showSettings = true
             }) {
                 Label("Settings", systemImage: "gearshape")
             }
-            .help("Settings")
+            .help("Settings (⌘,)")
         }
     }
     
     private var hasSelectedOfficeFiles: Bool {
         appState.files.contains {
             appState.selectedFiles.contains($0.id) && $0.fileType.requiresConversion
+        }
+    }
+
+    private var hasSelectedImageFiles: Bool {
+        appState.files.contains {
+            appState.selectedFiles.contains($0.id) && $0.fileType.isImage
         }
     }
 }
@@ -267,12 +292,12 @@ struct NotificationToast: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(NSColor.windowBackgroundColor))
+            RoundedRectangle(cornerRadius: DS.Radius.large)
+                .fill(DS.Colors.windowBackground)
                 .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: DS.Radius.large)
                 .stroke(type.color.opacity(0.3), lineWidth: 1)
         )
         .padding(.horizontal)
@@ -321,8 +346,8 @@ struct LoadingOverlay: View {
             }
             .padding(32)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(NSColor.windowBackgroundColor))
+                RoundedRectangle(cornerRadius: DS.Radius.large)
+                    .fill(DS.Colors.windowBackground)
                     .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
             )
         }
@@ -341,10 +366,10 @@ struct KeyboardShortcutHelper: View {
             Spacer()
             Text(shortcut)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(4)
+                .padding(.horizontal, DS.Spacing.xSmall)
+                .padding(.vertical, DS.Spacing.xxxSmall)
+                .background(DS.Colors.controlBackground)
+                .cornerRadius(DS.Radius.small)
         }
         .font(.caption)
         .foregroundColor(.secondary)

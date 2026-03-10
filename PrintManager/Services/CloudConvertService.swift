@@ -47,7 +47,7 @@ class CloudConvertService {
             throw CloudConvertError.invalidResponse("Chybí export URL v dokončené úloze")
         }
 
-        return try await downloadResult(from: exportURL, filename: ccFile.filename)
+        return try await downloadResult(from: exportURL, filename: ccFile.filename, sourceURL: fileURL)
     }
 
     // MARK: - Step 1: Create job
@@ -145,18 +145,23 @@ class CloudConvertService {
 
     // MARK: - Step 4: Download result
 
-    private func downloadResult(from url: URL, filename: String) async throws -> URL {
+    private func downloadResult(from url: URL, filename: String, sourceURL: URL) async throws -> URL {
         let (data, response) = try await URLSession.shared.data(from: url)
 
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw CloudConvertError.downloadFailed("HTTP \(http.statusCode)")
         }
 
-        let outputDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PrintManager-CC", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: outputDir, withIntermediateDirectories: true
-        )
+        // Výstup do složky zdrojového souboru; fallback na /tmp
+        let sourceDir = sourceURL.deletingLastPathComponent()
+        let outputDir: URL
+        if FileManager.default.isWritableFile(atPath: sourceDir.path) {
+            outputDir = sourceDir
+        } else {
+            outputDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("PrintManager-CC", isDirectory: true)
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        }
 
         let outputURL = outputDir.appendingPathComponent(filename)
         try data.write(to: outputURL)

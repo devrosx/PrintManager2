@@ -45,10 +45,20 @@ struct ContentView: View {
                 Divider()
             }
 
-            // Middle: Table + Log + Actions
+            // Middle: Table + Log + Actions NEBO Inline QuickLook
             VStack(spacing: 0) {
-                DropFileTableView()
-                    .frame(minHeight: 200)
+                if appState.showInlineQuickLook {
+                    // Inline QuickLook - zobrazí náhled místo tabulky
+                    InlineQuickLookView()
+                        .environmentObject(appState)
+                        .frame(minHeight: 200)
+                        .transition(.move(edge: .top))
+                } else {
+                    // Normální tabulka souborů
+                    DropFileTableView()
+                        .frame(minHeight: 200)
+                        .transition(.move(edge: .top))
+                }
 
                 Divider()
 
@@ -58,9 +68,8 @@ struct ContentView: View {
                 Divider()
 
                 BottomActionBar()
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .compactPadding()
+                    .background(DS.Colors.controlBackground)
             }
             .frame(minWidth: 460)
 
@@ -119,6 +128,63 @@ struct ContentView: View {
             DrawingsDialog(isPresented: $appState.showDrawingsDialog)
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showingImpositionDialog) {
+            if let file = appState.impositionSourceFile {
+                ImpositionDialog(isPresented: $appState.showingImpositionDialog, sourceFile: file)
+            }
+        }
+        .sheet(isPresented: $appState.showTilePDFDialog) {
+            if !appState.tilePDFFiles.isEmpty {
+                TilePDFDialog(isPresented: $appState.showTilePDFDialog,
+                              files: appState.tilePDFFiles)
+                    .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $appState.showExpandDialog) {
+            if let file = appState.expandFile {
+                ExpandDialog(isPresented: $appState.showExpandDialog, file: file)
+                    .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $appState.showSettings) {
+            SettingsView(isPresented: $appState.showSettings)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showInDesignImport) {
+            let selected = appState.files.filter { appState.selectedFiles.contains($0.id) }
+            InDesignImportDialog(isPresented: $appState.showInDesignImport, files: selected)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showStitchDialog) {
+            StitchDialog(isPresented: $appState.showStitchDialog,
+                         imageFiles: appState.stitchImageFiles)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showWatermarkDialog) {
+            WatermarkDialog(isPresented: $appState.showWatermarkDialog)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showResizeDialog) {
+            if !appState.resizeDialogFiles.isEmpty {
+                ResizeDialog(isPresented: $appState.showResizeDialog,
+                             files: appState.resizeDialogFiles)
+                    .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $appState.showImageAdjustDialog) {
+            ImageAdjustDialog(isPresented: $appState.showImageAdjustDialog,
+                              imageFiles: appState.imageAdjustFiles)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showGalleryDialog) {
+            if !appState.galleryImageFiles.isEmpty {
+                GalleryDialog(isPresented: $appState.showGalleryDialog,
+                              imageFiles: appState.galleryImageFiles)
+                    .environmentObject(appState)
+                    // Každé otevření s jiným výběrem vynucí novou instanci view (reset @State)
+                    .id(appState.galleryImageFiles.map(\.id.uuidString).joined())
+            }
+        }
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 // Cmd+I to toggle preview
@@ -139,13 +205,43 @@ struct ContentView: View {
                     }
                     return nil
                 }
-                // Mezerník — Quick Look (jen pokud hlavní okno je aktivní a není fokus v textu)
+                // Mezerník — Inline Quick Look (přepíná mezi seznamem souborů a náhledem)
                 if event.keyCode == 49 {
                     let responder = NSApp.keyWindow?.firstResponder
                     let inTextField = responder is NSTextView || responder is NSTextField
                     if !inTextField && !appState.files.isEmpty {
                         DispatchQueue.main.async {
-                            QuickLookController.shared.toggle(appState: appState)
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                appState.showInlineQuickLook.toggle()
+
+                                if appState.showInlineQuickLook {
+                                    // Naplnit seznam souborů k procházení (zachovat pořadí z files)
+                                    if appState.selectedFiles.count > 1 {
+                                        appState.quickLookFileIDs = appState.files
+                                            .filter { appState.selectedFiles.contains($0.id) }
+                                            .map(\.id)
+                                    } else {
+                                        appState.quickLookFileIDs = appState.files.map(\.id)
+                                    }
+                                    // Při otevření nastavit aktuálně vybraný soubor
+                                    if let firstID = appState.selectedFiles.first {
+                                        appState.quickLookFileID = firstID
+                                    } else if let firstFile = appState.files.first {
+                                        appState.quickLookFileID = firstFile.id
+                                    }
+                                    // Pro obrázky rovnou detailní náhled, pro ostatní thumbnails
+                                    let selectedFile = appState.files.first { $0.id == appState.quickLookFileID }
+                                    if selectedFile?.fileType.isImage == true {
+                                        appState.quickLookMode = .singlePage
+                                    } else {
+                                        appState.quickLookMode = .thumbnails
+                                    }
+                                    appState.quickLookCurrentPage = 0
+                                } else {
+                                    // Při zavření resetovat režim
+                                    appState.quickLookMode = .thumbnails
+                                }
+                            }
                         }
                         return nil
                     }
@@ -180,7 +276,13 @@ struct ContentView: View {
         // Auto-výběr default tiskárny při prvním načtení
         .onChange(of: printManager.availablePrinters) { printers in
             guard appState.selectedPrinter.isEmpty, !printers.isEmpty else { return }
-            let def = printManager.defaultPrinter ?? printers[0]
+            let preferred = UserDefaults.standard.string(forKey: "defaultPrinter") ?? ""
+            let def: String
+            if !preferred.isEmpty && printers.contains(preferred) {
+                def = preferred
+            } else {
+                def = printManager.defaultPrinter ?? printers[0]
+            }
             appState.selectedPrinter = def
             appState.loadSystemPresets()
         }
@@ -194,78 +296,101 @@ struct PrinterListPanel: View {
     @ObservedObject var printManager: PrintManager
     @State private var printerIcons: [String: NSImage] = [:]
     @State private var selectedAppID: UUID? = nil
+    @AppStorage("defaultPrinter") private var preferredPrinter = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
+            // ── Apps sekce (přesná výška dle počtu aplikací) ─────────────────
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: DS.Spacing.xxSmall) {
+                    Text("Apps")
+                        .font(DS.Typography.captionSemibold)
+                    Spacer()
+                    Button { pickApp() } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Přidat aplikaci")
+
+                    Button {
+                        if let id = selectedAppID {
+                            appState.removeExternalApp(id: id)
+                            selectedAppID = nil
+                        }
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Odebrat vybranou aplikaci")
+                    .disabled(selectedAppID == nil)
+                }
+                .padding(.horizontal, DS.Spacing.smallMedium)
+                .padding(.vertical, 7)
+
+                Divider()
+
+                if appState.externalApps.isEmpty {
+                    HStack {
+                        Spacer()
+                        Text("Přidej aplikaci klikem na +")
+                            .font(DS.Typography.caption2)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+                } else {
+                    // Přesná výška bez ScrollView — každý řádek ~38 px
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(appState.externalApps) { app in
+                            AppRowView(
+                                app: app,
+                                isSelected: selectedAppID == app.id,
+                                onSelect: {
+                                    selectedAppID = (selectedAppID == app.id) ? nil : app.id
+                                }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, DS.Spacing.xSmall)
+                    .padding(.vertical, DS.Spacing.xxSmall)
+                }
+            }
+            .background(DS.Colors.controlBackground)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            // ── Hlavička tiskáren ─────────────────────────────────────────────
+            HStack(spacing: DS.Spacing.xxSmall) {
                 Text("Printers")
-                    .font(.headline)
+                    .font(DS.Typography.captionSemibold)
                 Spacer()
                 Button {
                     printManager.refreshPrinters()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11))
+                        .font(.system(size: 10, weight: .semibold))
                 }
                 .buttonStyle(.borderless)
-                .help("Refresh printer list")
+                .help("Aktualizovat seznam tiskáren")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, DS.Spacing.smallMedium)
+            .padding(.vertical, 7)
 
             Divider()
 
-            // Preset Section — načítá se ze systémových plistů macOS
-            if !appState.selectedPrinter.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Preset")
-                            .font(.system(size: 11, weight: .semibold))
-                        Spacer()
-                        Button {
-                            appState.loadSystemPresets()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10))
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Znovu načíst presety ze systému")
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-
-                    if appState.availableSystemPresets.isEmpty {
-                        Text("Žádné presety")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 10)
-                    } else {
-                        Picker("Preset:", selection: $appState.selectedPreset) {
-                            Text("— bez presetu —").tag(nil as String?)
-                            ForEach(appState.availableSystemPresets) { preset in
-                                Text(preset.name).tag(preset.name as String?)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .padding(.horizontal, 8)
-                    }
-                }
-                .padding(.bottom, 8)
-                .background(Color(NSColor.controlBackgroundColor))
-
-                Divider()
-            }
-
+            // ── Seznam tiskáren (zbývající místo) ────────────────────────────
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if printManager.availablePrinters.isEmpty {
                         Text("No printers found")
-                            .font(.system(size: 11))
+                            .font(DS.Typography.caption)
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.top, 10)
+                            .padding(.horizontal, DS.Spacing.smallMedium)
+                            .padding(.top, DS.Spacing.smallMedium)
                     } else {
                         ForEach(printManager.availablePrinters, id: \.self) { printer in
                             PrinterRowView(
@@ -274,6 +399,7 @@ struct PrinterListPanel: View {
                                 icon: printerIcons[printer],
                                 status: printManager.printerStatuses[printer] ?? .idle,
                                 isDefault: printManager.defaultPrinter == printer,
+                                isPreferred: !preferredPrinter.isEmpty && preferredPrinter == printer,
                                 ip: printManager.printerIPs[printer],
                                 onSelect: {
                                     appState.selectedPrinter = printer
@@ -286,6 +412,9 @@ struct PrinterListPanel: View {
                                     if let host = printManager.printerIPs[printer] {
                                         printManager.openPrinterIPAddress(host)
                                     }
+                                },
+                                onDropFiles: { urls in
+                                    appState.printFiles(urls: urls, toPrinter: printer)
                                 }
                             )
                             .onAppear {
@@ -300,81 +429,17 @@ struct PrinterListPanel: View {
                         }
                     }
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
+                .padding(.horizontal, DS.Spacing.xSmall)
+                .padding(.vertical, DS.Spacing.xxSmall)
             }
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(DS.Colors.controlBackground)
 
-            // ── Apps sekce ───────────────────────────────────────────────────
-            Divider()
-
-            VStack(alignment: .leading, spacing: 0) {
-                // Záhlaví Apps
-                HStack(spacing: 4) {
-                    Text("Apps")
-                        .font(.system(size: 11, weight: .semibold))
-                    Spacer()
-                    // "+" přidat aplikaci
-                    Button {
-                        pickApp()
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Přidat aplikaci")
-
-                    // "−" odebrat vybranou aplikaci
-                    Button {
-                        if let id = selectedAppID {
-                            appState.removeExternalApp(id: id)
-                            selectedAppID = nil
-                        }
-                    } label: {
-                        Image(systemName: "minus")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Odebrat vybranou aplikaci")
-                    .disabled(selectedAppID == nil)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-
+            // ── Preset sekce ─────────────────────────────────────────────────
+            if !appState.selectedPrinter.isEmpty {
                 Divider()
-
-                if appState.externalApps.isEmpty {
-                    VStack(spacing: 6) {
-                        Image(systemName: "app.badge.plus")
-                            .font(.system(size: 22))
-                            .foregroundColor(.secondary.opacity(0.45))
-                        Text("Přidej aplikaci\nklikem na +")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(appState.externalApps) { app in
-                                AppRowView(
-                                    app: app,
-                                    isSelected: selectedAppID == app.id,
-                                    onSelect: {
-                                        selectedAppID = (selectedAppID == app.id) ? nil : app.id
-                                    }
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                    }
-                    .frame(maxHeight: 170)
-                }
+                PresetSectionView()
+                    .environmentObject(appState)
             }
-            .background(Color(NSColor.controlBackgroundColor))
         }
         .onAppear {
             if !appState.selectedPrinter.isEmpty {
@@ -402,6 +467,248 @@ struct PrinterListPanel: View {
             panel.beginSheetModal(for: window, completionHandler: handler)
         } else {
             panel.begin(completionHandler: handler)
+        }
+    }
+}
+
+// MARK: - Preset Section View
+
+struct PresetSectionView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var showPresetDetails = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Záhlaví
+            HStack(spacing: DS.Spacing.xxSmall) {
+                Text("Preset")
+                    .font(DS.Typography.captionSemibold)
+                Spacer()
+
+                // Zobrazit preset soubor ve Finderu
+                if let fileURL = appState.systemPresetsFilePath {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                    } label: {
+                        Image(systemName: "folder")
+                            .font(DS.Typography.smallIcon)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Ukázat preset soubor ve Finderu")
+                }
+
+                Button { appState.loadSystemPresets() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(DS.Typography.smallIcon)
+                }
+                .buttonStyle(.borderless)
+                .help("Znovu načíst presety ze systému")
+
+                Button {
+                    if let name = appState.selectedPreset {
+                        appState.deleteSystemPreset(name: name)
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(DS.Typography.smallIcon)
+                        .foregroundColor(appState.selectedPreset != nil ? .red : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .disabled(appState.selectedPreset == nil)
+                .help("Smazat vybraný preset ze systému")
+            }
+            .padding(.horizontal, DS.Spacing.smallMedium)
+            .padding(.vertical, 7)
+
+            Divider()
+
+            if appState.availableSystemPresets.isEmpty {
+                Text("Žádné presety")
+                    .font(DS.Typography.caption2)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            } else {
+                // Picker presetu
+                Picker("", selection: $appState.selectedPreset) {
+                    Text("— bez presetu —").tag(nil as String?)
+                    ForEach(appState.availableSystemPresets) { preset in
+                        Text(preset.name).tag(preset.name as String?)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .padding(.horizontal, DS.Spacing.small)
+                .padding(.top, DS.Spacing.xSmall)
+                .onChange(of: appState.selectedPreset) { _ in showPresetDetails = false }
+
+                // Info o vybraném presetu – skládací detail (jako u kalkulace)
+                if let name = appState.selectedPreset,
+                   let preset = appState.availableSystemPresets.first(where: { $0.name == name }) {
+                    let info = PresetInfoParser.parse(preset.lpOptions)
+                    if info.isEmpty {
+                        Text("Žádné specifické nastavení")
+                            .font(.caption)
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, DS.Spacing.xSmall)
+                    } else {
+                        // Souhrnný řádek s chevronem
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.15)) { showPresetDetails.toggle() }
+                        }) {
+                            HStack(spacing: DS.Spacing.xxSmall) {
+                                Image(systemName: showPresetDetails ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 7, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 10)
+                                Text("\(info.count) nastavení")
+                                    .font(DS.Typography.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, DS.Spacing.small)
+                        .padding(.top, DS.Spacing.xxSmall)
+                        .padding(.bottom, showPresetDetails ? 0 : DS.Spacing.xSmall)
+
+                        // Výklápěcí detail
+                        if showPresetDetails {
+                            VStack(alignment: .leading, spacing: 3) {
+                                ForEach(info, id: \.label) { item in
+                                    HStack(alignment: .top, spacing: 4) {
+                                        Text(item.label + ":")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .frame(width: 62, alignment: .leading)
+                                            .lineLimit(1)
+                                        Text(item.value)
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                            .lineLimit(2)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(NSColor.windowBackgroundColor))
+                            .cornerRadius(DS.Radius.medium)
+                            .padding(.horizontal, DS.Spacing.small)
+                            .padding(.bottom, DS.Spacing.xSmall)
+                        }
+                    }
+                }
+                Spacer().frame(height: DS.Spacing.xSmall)
+            }
+        }
+        .background(DS.Colors.controlBackground)
+    }
+}
+
+// MARK: - Preset Info Parser
+
+enum PresetInfoParser {
+    /// Parsuje lpOptions a vrací seznam párů (popisek, hodnota) pro zobrazení.
+    static func parse(_ lpOptions: [String]) -> [(label: String, value: String)] {
+        var result: [(label: String, value: String)] = []
+        var i = 0
+        while i < lpOptions.count {
+            let token = lpOptions[i]
+            if token == "-n", i + 1 < lpOptions.count {
+                let n = lpOptions[i + 1]
+                if let count = Int(n), count > 1 {
+                    result.append((label: "Kopie", value: "\(count)"))
+                }
+                i += 2
+            } else if token == "-o", i + 1 < lpOptions.count {
+                if let pair = interpret(lpOptions[i + 1]) {
+                    result.append(pair)
+                }
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        return result
+    }
+
+    private static func interpret(_ opt: String) -> (label: String, value: String)? {
+        switch opt {
+        case "sides=two-sided-long-edge":   return ("Strany", "Oboustranný (dl.)")
+        case "sides=two-sided-short-edge":  return ("Strany", "Oboustranný (kr.)")
+        case "sides=one-sided":             return nil
+        case "fit-to-page":                 return ("Velikost", "Přizpůsobit")
+        case "orientation-requested=4",
+             "orientation-requested=6":     return ("Orientace", "Na šířku")
+        case "orientation-requested=3":     return nil
+        default: break
+        }
+
+        let parts = opt.split(separator: "=", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let key = parts[0], value = parts[1]
+
+        switch key {
+        case "Collate":
+            return value.lowercased() == "false" ? ("Řazení", "Vypnuto") : nil
+
+        case "ColorModel":
+            switch value.lowercased() {
+            case "gray", "grayscale", "black", "greyscale": return ("Barvy", "ČB")
+            case "rgb":  return nil
+            case "color": return ("Barvy", "Barevně")
+            default:      return ("Barvy", value)
+            }
+
+        case "media", "PageSize":
+            return ("Formát", value)
+
+        case "print-quality":
+            switch value {
+            case "3": return ("Kvalita", "Náhled")
+            case "5": return nil
+            case "7": return ("Kvalita", "Vysoká")
+            default:  return nil
+            }
+
+        case "MediaType":
+            let epsonCodes: [String: String] = [
+                "0": "Obyčejný papír", "1": "Bright White Paper",
+                "2": "Matný fotopapír", "3": "Fotopapír",
+                "7": "CD/DVD", "9": "Ultra Premium Photo",
+                "10": "Premium Presentation Matte", "12": "Speciální médium",
+                "13": "Premium Photo Glossy"
+            ]
+            let textCodes: [String: String] = [
+                "Plain": "Obyčejný papír", "Photo": "Fotopapír",
+                "Cardstock": "Kartón", "Envelope": "Obálka",
+                "Transparency": "Fólie", "Matte": "Matný"
+            ]
+            let label = epsonCodes[value] ?? textCodes[value] ?? value
+            return ("Médium", label)
+
+        case "Resolution":
+            let clean = value
+                .replacingOccurrences(of: "x", with: "×")
+                .replacingOccurrences(of: "dpi", with: " dpi")
+            return ("Rozlišení", clean)
+
+        case "CustomProfile":
+            let filename = URL(fileURLWithPath: value).deletingPathExtension().lastPathComponent
+            return ("Profil", filename)
+
+        default:
+            let skipKeys: Set<String> = [
+                "PresetName", "PresetMenuName", "DocumentName",
+                "PMTiogaScalingFactor", "PMScaling", "PaperInfoIsSuggested"
+            ]
+            if skipKeys.contains(key) { return nil }
+            if key.hasPrefix("com.") || key.hasPrefix("PMTicket") { return nil }
+            if key.hasPrefix("EPIJ_") || key.hasPrefix("EPSON.") { return nil }
+            if Int(value) != nil && key.count > 8 { return nil }
+            return (key, value)
         }
     }
 }
@@ -514,12 +821,16 @@ struct PrinterRowView: View {
     let icon: NSImage?
     let status: PrinterStatus
     let isDefault: Bool
+    let isPreferred: Bool
     let ip: String?
     let onSelect: () -> Void
     let onOpenCUPS: () -> Void
     let onOpenCUPSMain: () -> Void
     let onOpenQueue: () -> Void
     let onOpenIP: () -> Void
+    var onDropFiles: (([URL]) -> Void)? = nil
+
+    @State private var isDropTargeted = false
 
     private var statusLabel: String {
         isDefault ? "\(status.label), Default" : status.label
@@ -530,7 +841,7 @@ struct PrinterRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DS.Spacing.smallMedium) {
             // Printer icon
             if let nsImage = icon {
                 Image(nsImage: nsImage)
@@ -545,30 +856,70 @@ struct PrinterRowView: View {
             }
 
             // Name + status
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Spacing.xxxSmall) {
                 Text(printer)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
                     .foregroundColor(isSelected ? .white : .primary)
 
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Spacing.xxSmall) {
                     Circle()
                         .fill(dotColor)
                         .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
                     Text(statusLabel)
-                        .font(.system(size: 10))
+                        .font(DS.Typography.caption2)
                         .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Status: \(statusLabel)")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Preferred marker (nastaveno v Preferences)
+            if isPreferred {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(isSelected ? .white.opacity(0.9) : .accentColor)
+                    .help("Výchozí tiskárna (nastaveno v Preferences)")
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor : Color.clear)
-        .cornerRadius(6)
+        .padding(.horizontal, DS.Spacing.small)
+        .padding(.vertical, DS.Spacing.xSmall)
+        .background(
+            isDropTargeted
+                ? Color.accentColor.opacity(0.18)
+                : (isSelected ? Color.accentColor : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.small)
+                .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 1.5)
+        )
+        .cornerRadius(DS.Radius.small)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { onOpenQueue() }
         .onTapGesture(count: 1) { onSelect() }
+        .onDrop(of: [.fileURL], isTargeted: onDropFiles != nil ? $isDropTargeted : .constant(false)) { providers in
+            guard let handler = onDropFiles else { return false }
+            let group = DispatchGroup()
+            var dropped: [URL] = []
+            let q = DispatchQueue(label: "pm.printerrow.drop")
+            for provider in providers {
+                group.enter()
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    defer { group.leave() }
+                    if let data = item as? Data,
+                       let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        q.sync { dropped.append(url) }
+                    }
+                }
+            }
+            group.notify(queue: .main) {
+                guard !dropped.isEmpty else { return }
+                handler(dropped)
+            }
+            return true
+        }
         .contextMenu {
             Button {
                 onOpenQueue()
@@ -610,7 +961,7 @@ struct AppRowView: View {
     @State private var isDropTargeted = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Spacing.small) {
             Group {
                 if let icon = icon {
                     Image(nsImage: icon)
@@ -618,28 +969,28 @@ struct AppRowView: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
                 } else {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: DS.Radius.small)
                         .fill(Color(NSColor.controlColor))
                         .frame(width: 28, height: 28)
                 }
             }
 
             Text(app.name)
-                .font(.system(size: 12))
+                .font(DS.Typography.subheadline)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundColor(isSelected ? .white : .primary)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, DS.Spacing.small)
         .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: DS.Radius.small)
                 .fill(isSelected
                       ? Color.accentColor
                       : (isDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: DS.Radius.small)
                 .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
@@ -700,23 +1051,23 @@ struct PrinterSettingsBar: View {
     @ObservedObject var printManager: PrintManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Spacing.xSmall) {
             Text("Printer setting")
-                .font(.headline)
+                .font(DS.Typography.headline)
 
-            HStack(spacing: 16) {
+            HStack(spacing: DS.Spacing.large) {
                 // Copies
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Spacing.xxSmall) {
                     Text("Copies:")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                     Stepper("\(appState.printCopies)", value: $appState.printCopies, in: 1...999)
                         .frame(width: 88)
                 }
 
                 // Paper size
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Spacing.xxSmall) {
                     Text("Paper size:")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                     Picker("", selection: $appState.printPaperSize) {
                         Text("A4").tag("A4")
                         Text("A3").tag("A3")
@@ -732,7 +1083,7 @@ struct PrinterSettingsBar: View {
 
                 // Two-sided
                 Toggle("two-sided", isOn: $appState.printTwoSided)
-                    .font(.system(size: 12))
+                    .font(DS.Typography.subheadline)
 
                 // Orientation button
                 Button(action: { appState.printLandscape.toggle() }) {
@@ -742,17 +1093,18 @@ struct PrinterSettingsBar: View {
                 }
                 .buttonStyle(.bordered)
                 .help(appState.printLandscape ? "Landscape" : "Portrait")
+                .accessibilityLabel(appState.printLandscape ? "Landscape orientation" : "Portrait orientation")
 
                 // Fit to page
                 Toggle("Fit to page", isOn: $appState.printFitToPage)
-                    .font(.system(size: 12))
+                    .font(DS.Typography.subheadline)
 
                 Divider().frame(height: 20)
 
                 // Color
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Spacing.xxSmall) {
                     Text("Color:")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                     Picker("", selection: $appState.printColorMode) {
                         Text("Auto").tag("auto")
                         Text("Color").tag("color")
@@ -767,10 +1119,11 @@ struct PrinterSettingsBar: View {
                 // Refresh button
                 Button(action: { printManager.refreshPrinters() }) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11))
+                        .font(DS.Typography.caption)
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh printers")
+                .accessibilityLabel("Refresh printers")
             }
         }
     }
@@ -778,143 +1131,121 @@ struct PrinterSettingsBar: View {
 
 // MARK: - Drop File Table View
 
+// MARK: - Column Widths (shared state)
+
+final class ColumnWidths: ObservableObject {
+    @Published var size:      CGFloat
+    @Published var kind:      CGFloat
+    @Published var fileSize:  CGFloat
+    @Published var pages:     CGFloat
+    @Published var colors:    CGFloat
+    @Published var converted: CGFloat
+
+    private enum K {
+        static let size      = "cw3_size"
+        static let kind      = "cw3_kind"
+        static let fileSize  = "cw3_fileSize"
+        static let pages     = "cw3_pages"
+        static let colors    = "cw3_colors"
+        static let converted = "cw3_converted"
+    }
+
+    init() {
+        let ud = UserDefaults.standard
+        func r(_ key: String, _ def: CGFloat) -> CGFloat {
+            let v = ud.double(forKey: key); return v > 0 ? CGFloat(v) : def
+        }
+        size      = r(K.size,      80)
+        kind      = r(K.kind,      50)
+        fileSize  = r(K.fileSize,  70)
+        pages     = r(K.pages,     48)
+        colors    = r(K.colors,    65)
+        converted = r(K.converted, 36)
+    }
+
+    func persist() {
+        let ud = UserDefaults.standard
+        ud.set(Double(size),      forKey: K.size)
+        ud.set(Double(kind),      forKey: K.kind)
+        ud.set(Double(fileSize),  forKey: K.fileSize)
+        ud.set(Double(pages),     forKey: K.pages)
+        ud.set(Double(colors),    forKey: K.colors)
+        ud.set(Double(converted), forKey: K.converted)
+    }
+}
+
 struct DropFileTableView: View {
     @EnvironmentObject var appState: AppState
     @State private var isDropTargeted = false
     @AppStorage("tableRowFontSize") private var tableRowFontSize: Double = 12
+    @StateObject private var colWidths = ColumnWidths()
 
     var body: some View {
         Group {
             if !appState.files.isEmpty {
-                Table(appState.files, selection: $appState.selectedFiles) {
-                    TableColumn("File") { file in
-                        FileRowView(file: file)
-                    }
-                    .width(min: 140, ideal: 210)
+                VStack(spacing: 0) {
+                    FileListHeader(
+                        hiddenColumns: $appState.hiddenColumns,
+                        sortKey: $appState.fileSortKey,
+                        sortAscending: $appState.fileSortAscending
+                    )
+                    .environmentObject(colWidths)
 
-                    TableColumn("Size") { file in
-                        Text(file.pageSizeString)
-                    }
-                    .width(100)
+                    Divider()
 
-                    TableColumn("Kind") { file in
-                        Text(file.fileType.rawValue.lowercased())
+                    List(appState.sortedFiles, selection: $appState.selectedFiles) { file in
+                        FileListRow(file: file, hiddenColumns: appState.hiddenColumns)
+                            .tag(file.id)
                     }
-                    .width(45)
-
-                    TableColumn("File size") { file in
-                        Text(file.fileSizeFormatted)
-                    }
-                    .width(70)
-
-                    TableColumn("Pages") { file in
-                        Text("\(file.pageCount)")
-                    }
-                    .width(48)
-
-                    TableColumn("Colors") { file in
-                        Text(file.colorInfo)
-                            .foregroundColor(
-                                file.colorInfo.contains("CMYK") ? .cyan : .primary
-                            )
-                    }
-                    .width(65)
-                    
-                    TableColumn("Status") { file in
-                        StatusBadge(status: file.status)
-                    }
-                    .width(80)
-                }
-                .environment(\.font, .system(size: CGFloat(tableRowFontSize)))
-                .contextMenu(forSelectionType: UUID.self) { items in
-                    if !items.isEmpty {
-                        Button(action: { appState.revealInFinder(items: items) }) {
-                            Label("Reveal in Finder", systemImage: "folder")
-                        }
-                        Button(action: { appState.openInDefaultApp(items: items) }) {
-                            Label("Open", systemImage: "arrow.up.forward.app")
-                        }
-                        if items.count == 1 {
-                            Button(action: { appState.editingFileID = items.first }) {
-                                Label("Rename", systemImage: "pencil")
+                    .listStyle(.inset(alternatesRowBackgrounds: true))
+                    .environment(\.font, .system(size: CGFloat(tableRowFontSize)))
+                    .environmentObject(colWidths)
+                    .contextMenu(forSelectionType: UUID.self) { items in
+                        if !items.isEmpty {
+                            // File Operations
+                            Button(action: { appState.revealInFinder(items: items) }) {
+                                Label("Reveal in Finder", systemImage: "folder")
                             }
-                        }
-                        Divider()
-
-                        // Determine selected file types
-                        let selectedFiles = appState.files.filter { items.contains($0.id) }
-                        let hasImage = selectedFiles.contains { $0.fileType.isImage }
-                        let hasPDF = selectedFiles.contains { $0.fileType == .pdf }
-
-                        if hasImage && !hasPDF {
-                            // Image Actions
-                            Button(action: { appState.convertImageToPDF() }) {
-                                Label("Convert to PDF", systemImage: "doc.badge.plus")
-                            }
-                            Button(action: { appState.cropPDF() }) {
-                                Label("Crop Image", systemImage: "crop")
-                            }
-                            Button(action: { appState.smartCropFiles() }) {
-                                Label("Smart Crop", systemImage: "sparkles")
-                            }
-                            Button(action: { appState.openMultiCrop() }) {
-                                Label("MultiCrop", systemImage: "photo.stack")
+                            Button(action: { appState.openInDefaultApp(items: items) }) {
+                                Label("Open", systemImage: "arrow.up.forward.app")
                             }
                             Divider()
-                            Button(action: { appState.invertImage() }) {
-                                Label("Invert Colors", systemImage: "circle.lefthalf.filled")
-                            }
-                            Button(action: { appState.convertToGray() }) {
-                                Label("Convert to Gray", systemImage: "circle.fill")
-                            }
-                        } else {
-                            // PDF Actions
-                            Button(action: { appState.mergePDFs() }) {
-                                Label("Combine PDF", systemImage: "doc.on.doc")
-                            }
-                            Button(action: { appState.splitPDF() }) {
-                                Label("Split PDF", systemImage: "doc.on.doc.fill")
-                            }
-                            Divider()
-                            Button(action: { appState.compressPDF() }) {
-                                Label("Compress PDF", systemImage: "arrow.down.circle")
-                            }
-                            Button(action: { appState.rasterizePDF() }) {
-                                Label("Rasterize PDF", systemImage: "rectangle.dashed")
-                            }
-                            Divider()
-                            Button(action: { appState.cropPDF() }) {
-                                Label("Crop PDF/Image", systemImage: "crop")
-                            }
-                            Button(action: { appState.smartCropFiles() }) {
-                                Label("Smart Crop", systemImage: "sparkles")
-                            }
-                            if hasPDF {
-                                Divider()
-                                Button(action: { appState.showPDFInfo() }) {
-                                    Label("PDF Info", systemImage: "info.circle")
+                            if items.count == 1 {
+                                Button(action: { appState.editingFileID = items.first }) {
+                                    Label("Rename", systemImage: "pencil")
                                 }
                             }
-                        }
-
-                        Divider()
-                        Button(role: .destructive, action: {
-                            // Odložení na další runloop — SwiftUI Table crashuje,
-                            // pokud datový zdroj mutujeme přímo ve chvíli,
-                            // kdy context menu teprve zavírá svou animaci.
-                            DispatchQueue.main.async {
-                                appState.removeFiles(items: items)
+                            Button(action: { appState.openBatchRename() }) {
+                                Label("Rename Selected…", systemImage: "pencil.line")
                             }
-                        }) {
-                            Label("Delete", systemImage: "trash")
+                            Divider()
+
+                            // PDF / Image akce podle výběru
+                            let selectedFiles = appState.files.filter { items.contains($0.id) }
+                            let hasImage = selectedFiles.contains { $0.fileType.isImage }
+                            let hasPDF   = selectedFiles.contains { $0.fileType == .pdf }
+
+                            if hasImage && !hasPDF {
+                                imageActionsMenuContent(appState)
+                            } else {
+                                pdfActionsMenuContent(appState)
+                            }
+
+                            Divider()
+                            Button(role: .destructive, action: {
+                                DispatchQueue.main.async {
+                                    appState.removeFiles(items: items)
+                                }
+                            }) {
+                                Label("Remove from List", systemImage: "trash")
+                            }
                         }
+                    } primaryAction: { items in
+                        appState.openInDefaultApp(items: items)
                     }
-                } primaryAction: { items in
-                    // Dvojklik = otevřít v defaultní aplikaci
-                    appState.openInDefaultApp(items: items)
                 }
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: DS.Spacing.smallMedium) {
                     Image(systemName: "arrow.down.to.line")
                         .font(.system(size: 32))
                         .foregroundColor(.secondary)
@@ -927,9 +1258,9 @@ struct DropFileTableView: View {
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: DS.Radius.small)
                     .stroke(Color.accentColor, lineWidth: 2)
-                    .padding(2)
+                    .padding(DS.Spacing.xxxSmall)
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
@@ -953,10 +1284,235 @@ struct DropFileTableView: View {
 
             group.notify(queue: .main) {
                 guard !droppedURLs.isEmpty else { return }
-                appState.addFiles(urls: droppedURLs)
+                // Filtrovat soubory již přítomné v listu — zabrání duplicitám
+                // při přetažení řádku v rámci samotného listu (row.onDrag → table.onDrop)
+                let existingPaths = Set(appState.files.map { $0.url.path })
+                let newURLs = droppedURLs.filter { !existingPaths.contains($0.path) }
+                guard !newURLs.isEmpty else { return }
+                appState.addFiles(urls: newURLs)
             }
             return true
         }
+    }
+}
+
+// MARK: - Column Resize Strip (overlay on trailing edge of header cell)
+
+private struct ColResizeStrip: View {
+    @Binding var width: CGFloat
+    var minWidth: CGFloat = 40
+    var maxWidth: CGFloat = 500
+    var onEnd: () -> Void = {}
+
+    @State private var startWidth: CGFloat = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.0001))
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .cursor(.resizeLeftRight)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { v in
+                        if startWidth == 0 { startWidth = width }
+                        width = min(maxWidth, max(minWidth, startWidth + v.translation.width))
+                    }
+                    .onEnded { _ in
+                        startWidth = 0
+                        onEnd()
+                    }
+            )
+    }
+}
+
+// MARK: - File List Header
+
+struct FileListHeader: View {
+    @Binding var hiddenColumns: Set<FileListColumn>
+    @Binding var sortKey: FileSortKey
+    @Binding var sortAscending: Bool
+    @EnvironmentObject var colWidths: ColumnWidths
+
+    var body: some View {
+        HStack(spacing: 0) {
+            headerButton("File", key: .name)
+                .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
+
+            if !hiddenColumns.contains(.size) {
+                headerButton("Size", key: .size)
+                    .frame(width: colWidths.size, alignment: .leading)
+                    .overlay(alignment: .trailing) {
+                        ColResizeStrip(width: $colWidths.size) { colWidths.persist() }
+                    }
+            }
+            if !hiddenColumns.contains(.kind) {
+                headerButton("Kind", key: .kind)
+                    .frame(width: colWidths.kind, alignment: .leading)
+                    .overlay(alignment: .trailing) {
+                        ColResizeStrip(width: $colWidths.kind) { colWidths.persist() }
+                    }
+            }
+            if !hiddenColumns.contains(.fileSize) {
+                headerButton("File size", key: .fileSize)
+                    .frame(width: colWidths.fileSize, alignment: .leading)
+                    .overlay(alignment: .trailing) {
+                        ColResizeStrip(width: $colWidths.fileSize) { colWidths.persist() }
+                    }
+            }
+            if !hiddenColumns.contains(.pages) {
+                headerButton("Pages", key: .pages)
+                    .frame(width: colWidths.pages, alignment: .leading)
+                    .overlay(alignment: .trailing) {
+                        ColResizeStrip(width: $colWidths.pages) { colWidths.persist() }
+                    }
+            }
+            if !hiddenColumns.contains(.colors) {
+                headerButton("Colors", key: .colors)
+                    .frame(width: colWidths.colors, alignment: .leading)
+                    .overlay(alignment: .trailing) {
+                        ColResizeStrip(width: $colWidths.colors) { colWidths.persist() }
+                    }
+            }
+            if !hiddenColumns.contains(.converted) {
+                Text("✓")
+                    .frame(width: colWidths.converted, alignment: .center)
+            }
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .contextMenu {
+            Text("File").foregroundColor(.secondary)
+
+            ForEach(FileListColumn.allCases, id: \.self) { column in
+                Button {
+                    if hiddenColumns.contains(column) {
+                        hiddenColumns.remove(column)
+                    } else {
+                        hiddenColumns.insert(column)
+                    }
+                } label: {
+                    HStack {
+                        if !hiddenColumns.contains(column) {
+                            Image(systemName: "checkmark")
+                        }
+                        Text(column.rawValue)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func headerButton(_ title: String, key: FileSortKey) -> some View {
+        Button(action: {
+            if sortKey == key {
+                sortAscending.toggle()
+            } else {
+                sortKey = key
+                sortAscending = true
+            }
+        }) {
+            HStack(spacing: 2) {
+                Text(title)
+                    .fontWeight(sortKey == key ? .semibold : .regular)
+                if sortKey == key {
+                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - File List Row
+
+struct FileListRow: View {
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var colWidths: ColumnWidths
+    let file: FileItem
+    let hiddenColumns: Set<FileListColumn>
+
+    var body: some View {
+        HStack(spacing: 0) {
+            FileRowView(file: file)
+                .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
+
+            if !hiddenColumns.contains(.size) {
+                Text(file.pageSizeString)
+                    .frame(width: colWidths.size, alignment: .leading)
+            }
+            if !hiddenColumns.contains(.kind) {
+                Text(file.fileType.rawValue.lowercased())
+                    .frame(width: colWidths.kind, alignment: .leading)
+            }
+            if !hiddenColumns.contains(.fileSize) {
+                Text(file.fileSizeFormatted)
+                    .frame(width: colWidths.fileSize, alignment: .leading)
+            }
+            if !hiddenColumns.contains(.pages) {
+                Text("\(file.pageCount)")
+                    .frame(width: colWidths.pages, alignment: .leading)
+            }
+            if !hiddenColumns.contains(.colors) {
+                Text(file.colorInfo)
+                    .foregroundColor(file.colorInfo.contains("CMYK") ? .cyan : .primary)
+                    .frame(width: colWidths.colors, alignment: .leading)
+            }
+            if !hiddenColumns.contains(.converted) {
+                Group {
+                    if file.isConverted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: colWidths.converted, alignment: .center)
+            }
+        }
+        .onDrag {
+            // Registruje public.file-url – funguje pro přesun, otevření v aplikaci i tisk (ikona tiskárny)
+            // SwiftUI List automaticky přidá providery všech vybraných řádků do drag session
+            NSItemProvider(object: file.url as NSURL)
+        } preview: {
+            HStack(spacing: 6) {
+                Image(systemName: file.fileType.icon)
+                    .foregroundColor(file.fileType.listColor)
+                let isMulti = appState.selectedFiles.count > 1 && appState.selectedFiles.contains(file.id)
+                Text(isMulti ? "\(appState.selectedFiles.count) souborů" : file.name)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.regularMaterial)
+            .cornerRadius(8)
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0).onEnded { value in
+                // Ignoruj skutečný drag, jen reaguj na kliknutí (pohyb < 5 pt)
+                let dist = hypot(value.translation.width, value.translation.height)
+                guard dist < 5 else { return }
+                let isShift = NSEvent.modifierFlags.contains(.shift)
+                let isCmd   = NSEvent.modifierFlags.contains(.command)
+                DispatchQueue.main.async {
+                    if isShift,
+                       let anchorID  = appState.rangeAnchorID,
+                       let anchorIdx = appState.sortedFiles.firstIndex(where: { $0.id == anchorID }),
+                       let curIdx    = appState.sortedFiles.firstIndex(where: { $0.id == file.id }) {
+                        let lo = min(anchorIdx, curIdx)
+                        let hi = max(anchorIdx, curIdx)
+                        appState.selectedFiles = Set(appState.sortedFiles[lo...hi].map { $0.id })
+                    } else if !isShift && !isCmd {
+                        appState.rangeAnchorID = file.id
+                    }
+                }
+            }
+        )
     }
 }
 
@@ -971,16 +1527,16 @@ struct InlineLogView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(appState.debugMessages) { message in
                         Text(message.message)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(DS.Typography.mono)
                             .foregroundColor(logColor(for: message.level))
                             .textSelection(.enabled)
                             .id(message.id)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(6)
+                .padding(DS.Spacing.xSmall)
             }
-            .background(Color(red: 0.09, green: 0.09, blue: 0.09))
+            .background(DS.Colors.darkBackground)
             .onChange(of: appState.debugMessages.count) { _ in
                 if let last = appState.debugMessages.last {
                     withAnimation {
@@ -993,10 +1549,10 @@ struct InlineLogView: View {
 
     private func logColor(for level: DebugLevel) -> Color {
         switch level {
-        case .info:    return Color(red: 0.4, green: 0.85, blue: 0.4)
-        case .success: return .green
-        case .warning: return .orange
-        case .error:   return Color(red: 1.0, green: 0.35, blue: 0.35)
+        case .info:    return DS.Colors.logInfo
+        case .success: return DS.Colors.logSuccess
+        case .warning: return DS.Colors.logWarning
+        case .error:   return DS.Colors.logError
         }
     }
 }
@@ -1007,68 +1563,51 @@ struct BottomActionBar: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Spacing.small) {
             // Rotate Left (90° CCW) — Cmd+Shift+R
             Button(action: { appState.rotateSelectedFilesLeft() }) {
                 Image(systemName: "rotate.left")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(DS.Typography.actionIcon)
             }
             .buttonStyle(.bordered)
             .disabled(appState.selectedFiles.isEmpty)
             .help("Rotate 90° counter-clockwise (⌘⇧R)")
+            .accessibilityLabel("Rotate left")
             .keyboardShortcut("r", modifiers: [.command, .shift])
 
             // Rotate Right (90° CW) — Cmd+R
             Button(action: { appState.rotateSelectedFiles() }) {
                 Image(systemName: "rotate.right")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(DS.Typography.actionIcon)
             }
             .buttonStyle(.bordered)
             .disabled(appState.selectedFiles.isEmpty)
             .help("Rotate 90° clockwise (⌘R)")
+            .accessibilityLabel("Rotate right")
             .keyboardShortcut("r", modifiers: .command)
 
             // PDF Actions menu
             Menu {
-                Button("Combine PDF") { appState.mergePDFs() }
-                Button("Split PDF")   { appState.splitPDF() }
-                Divider()
-                Button("Compress PDF")  { appState.compressPDF() }
-                Button("Rasterize PDF") { appState.rasterizePDF() }
-                Divider()
-                Button("Crop PDF/Image") { appState.cropPDF() }
-                Button("Smart Crop") { appState.smartCropFiles() }
-                Divider()
-                Button("Choose Color Pages") { appState.openColorPageSelector() }
-                Divider()
-                Button("Add Blank Page to Odd") { appState.addBlankPagesToOddDocuments() }
-                Divider()
-                Button("PDF Info") { appState.showPDFInfo() }
+                pdfActionsMenuContent(appState)
             } label: {
                 HStack(spacing: 3) {
                     Text("PDF Actions")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(DS.Typography.menuChevron)
                 }
             }
             .frame(width: 130)
 
             // Image Actions menu
             Menu {
-                Button("Convert to PDF") { appState.convertImageToPDF() }
-                Button("Crop Image") { appState.cropPDF() }
-                Button("Smart Crop") { appState.smartCropFiles() }
-                Button("MultiCrop") { appState.openMultiCrop() }
-                Divider()
-                Button("Invert Colors") { appState.invertImage() }
-                Button("Convert to Gray") { appState.convertToGray() }
+                imageActionsMenuContent(appState)
             } label: {
                 HStack(spacing: 3) {
                     Text("Image Actions")
-                        .font(.system(size: 12))
+                        .font(DS.Typography.subheadline)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(DS.Typography.menuChevron)
                 }
             }
             .frame(width: 140)
@@ -1085,6 +1624,19 @@ struct BottomActionBar: View {
             .buttonStyle(.bordered)
             .disabled(appState.selectedFiles.isEmpty)
             .help("Zpracování naskenovaných výkresů")
+
+            // Import to InDesign
+            Button {
+                appState.openInDesignImport()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.arrow.down.on.square")
+                    Text("Import to InDesign")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.selectedFiles.isEmpty)
+            .help("Importovat vybrané soubory do Adobe InDesign")
 
             // Print button
             Button("Print selected") {
@@ -1111,12 +1663,22 @@ struct CompactPreviewPanel: View {
         return appState.files.first { $0.id == id }
     }
 
+    // Spustí barevnou analýzu pro všechny vybrané PDF soubory (pro kalkulaci)
+    private func triggerColorAnalysisForPricing() {
+        let pdfFiles = appState.files.filter {
+            appState.selectedFiles.contains($0.id) && $0.fileType == .pdf
+        }
+        for file in pdfFiles {
+            appState.loadPDFMetadataIfNeeded(for: file)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header with toggle
             HStack {
                 Text("Preview file")
-                    .font(.headline)
+                    .font(DS.Typography.headline)
 
                 Spacer()
 
@@ -1126,43 +1688,43 @@ struct CompactPreviewPanel: View {
                     }
                 }) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DS.Typography.chevron)
                 }
                 .buttonStyle(.borderless)
                 .help("Collapse")
+                .accessibilityLabel("Collapse preview")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .headerPadding()
 
             Divider()
 
             if appState.selectedFiles.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "doc.questionmark")
+                VStack(spacing: DS.Spacing.medium) {
+                    Image(systemName: "questionmark.circle")
                         .font(.system(size: 36))
                         .foregroundColor(.secondary)
                     Text("No file selected")
-                        .font(.caption)
+                        .font(DS.Typography.caption)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Nahoře vždy: preview obrázek
                 if let file = selectedFile {
-                    VStack(spacing: 8) {
+                    VStack(spacing: DS.Spacing.small) {
                         PreviewImageView(file: file, currentPage: $currentPage)
                             .id("\(file.id)-\(file.contentVersion)")
                             .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 8)
+                            .padding(.horizontal, DS.Spacing.small)
+                            .padding(.top, DS.Spacing.small)
 
                         Text(file.name + "." + file.fileType.rawValue.lowercased())
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(DS.Typography.captionSemibold)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, DS.Spacing.xSmall)
 
                         if file.pageCount > 1 {
-                            HStack(spacing: 12) {
+                            HStack(spacing: DS.Spacing.medium) {
                                 Button(action: {
                                     if currentPage > 0 { currentPage -= 1 }
                                 }) {
@@ -1171,9 +1733,10 @@ struct CompactPreviewPanel: View {
                                 }
                                 .disabled(currentPage == 0)
                                 .buttonStyle(.borderless)
+                                .accessibilityLabel("Previous page")
 
                                 Text("\(currentPage + 1)")
-                                    .font(.system(size: 12))
+                                    .font(DS.Typography.subheadline)
 
                                 Button(action: {
                                     if currentPage < file.pageCount - 1 { currentPage += 1 }
@@ -1183,6 +1746,7 @@ struct CompactPreviewPanel: View {
                                 }
                                 .disabled(currentPage >= file.pageCount - 1)
                                 .buttonStyle(.borderless)
+                                .accessibilityLabel("Next page")
                             }
                         }
                     }
@@ -1197,8 +1761,13 @@ struct CompactPreviewPanel: View {
                     Text("Kalkulace").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .compactPadding()
+                .onChange(of: selectedTab) { newTab in
+                    // Spustit B&W/Color analýzu jen když uživatel přepne na Kalkulaci
+                    if newTab == 1 {
+                        triggerColorAnalysisForPricing()
+                    }
+                }
 
                 Divider()
 
@@ -1209,23 +1778,21 @@ struct CompactPreviewPanel: View {
                             if let file = selectedFile {
                                 CompactFileMetadata(file: file)
                                     .id("\(file.id)-\(file.contentVersion)")
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                Divider().padding(.horizontal, 8)
+                                    .padding(.horizontal, DS.Spacing.smallMedium)
+                                    .padding(.vertical, DS.Spacing.xxSmall)
+                                Divider().padding(.horizontal, DS.Spacing.small)
                             }
                             SelectionSummaryView()
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
+                                .compactPadding()
                         } else {
                             FilePricePanel()
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
+                                .compactPadding()
                         }
                     }
                 }
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.Colors.controlBackground)
     }
 }
 
@@ -1236,33 +1803,31 @@ struct CompactFileMetadata: View {
     let file: FileItem
     @State private var pdfMetadata: PDFMetadata?
     @State private var isAnalyzingColors = false
-    
+    @State private var iccProfileName: String? = nil
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
             MetaLine(label: "Filesize", value: file.fileSizeFormatted)
             MetaLine(label: "Pages",    value: "\(file.pageCount)")
             MetaLine(label: "MediaBox", value: file.pageSizeString)
             MetaLine(label: "Colors",   value: file.colorInfo)
-            
+
+            // Image-specific metadata
+            if file.fileType.isImage {
+                if let icc = iccProfileName {
+                    Divider().padding(.vertical, 2)
+                    MetaLine(label: "ICC Profil", value: icc)
+                }
+            }
+
             // PDF-specific metadata
             if file.fileType == .pdf {
                 if let metadata = pdfMetadata {
                     Divider()
                         .padding(.vertical, 4)
-                    
-                    // Color analysis
-                    if isAnalyzingColors {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .scaleEffect(0.5)
-                            Text("Analyzing colors...")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    } else if !metadata.colorInfoString.isEmpty {
-                        MetaLine(label: "B&W/Color", value: metadata.colorInfoString)
-                    }
-                    
+
+                    // B&W/Color analýza se nezobrazuje zde - jen v záložce Kalkulace
+
                     // Title
                     if let title = metadata.title, !title.isEmpty {
                         MetaLine(label: "Title", value: title)
@@ -1291,11 +1856,11 @@ struct CompactFileMetadata: View {
                     Divider()
                         .padding(.vertical, 4)
                     // Show loading indicator
-                    HStack(spacing: 4) {
+                    HStack(spacing: DS.Spacing.xxSmall) {
                         ProgressView()
                             .scaleEffect(0.5)
                         Text("Loading...")
-                            .font(.system(size: 10))
+                            .font(DS.Typography.caption2)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -1304,9 +1869,37 @@ struct CompactFileMetadata: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .onAppear {
             loadPDFMetadata()
+            loadICCProfile()
         }
     }
-    
+
+    private func loadICCProfile() {
+        guard file.fileType.isImage else { return }
+        let url = file.url
+        DispatchQueue.global(qos: .userInitiated).async {
+            var name: String? = nil
+            if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+                // TIFF/JFIF/PNG – profil je v kCGImagePropertyColorModel nebo v ICC datech
+                if let raw = CGImageSourceCopyPropertiesAtIndex(src, 0, [kCGImageSourceShouldCache: false] as CFDictionary) {
+                    let dict = raw as? [CFString: Any]
+                    // Zkus profil přes CGColorSpace z CGImage
+                    if let img = CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCache: false] as CFDictionary),
+                       let cs = img.colorSpace,
+                       let iccName = cs.name as String? {
+                        name = iccName
+                    }
+                    // Fallback: kCGImagePropertyColorModel
+                    if name == nil, let model = (props)[kCGImagePropertyColorModel] as? String {
+                        name = model
+                    }
+                    _ = dict
+                }
+            }
+            DispatchQueue.main.async { self.iccProfileName = name }
+        }
+    }
+
     private func loadPDFMetadata() {
         guard file.fileType == .pdf else { return }
 
@@ -1314,40 +1907,13 @@ struct CompactFileMetadata: View {
         pdfMetadata = nil
         isAnalyzingColors = false
 
-        // Základní metadata (synchronně)
-        var metadata = PDFInfoService.shared.extractMetadata(from: file.url)
-
-        guard metadata != nil else {
-            self.pdfMetadata = nil
-            return
+        // Základní metadata (synchronně) - BEZ barevné analýzy
+        // Barevná analýza se spustí jen v záložce Kalkulace
+        let metadata = PDFInfoService.shared.extractMetadata(from: file.url)
+        self.pdfMetadata = metadata
+        if let m = metadata {
+            appState.pdfMetadataCache[file.id] = m
         }
-
-        guard PageColorAnalyzer.shared.isGSAvailable else {
-            // GS není dostupný — zobraz metadata bez barevné analýzy
-            self.pdfMetadata = metadata
-            if let m = metadata { appState.pdfMetadataCache[file.id] = m }
-            return
-        }
-
-        // Analýza barev (asynchronně).
-        // Poznámka: CompactFileMetadata je struct — [weak self] nelze použít.
-        // Ochranu před race condition zajišťuje .id(file.id) v rodiči, který
-        // celý view znovu vytvoří při změně souboru (čímž odloží stará pdfMetadata).
-        isAnalyzingColors = true
-        PageColorAnalyzer.shared.analyzePDF(at: file.url) { result in
-            self.isAnalyzingColors = false
-            switch result {
-            case .success(let colorInfo):
-                metadata?.colorPageCount = colorInfo.colorCount
-                metadata?.blackWhitePageCount = colorInfo.blackWhiteCount
-                self.pdfMetadata = metadata
-                if let m = metadata { appState.pdfMetadataCache[file.id] = m }
-            case .failure:
-                self.pdfMetadata = metadata
-                if let m = metadata { appState.pdfMetadataCache[file.id] = m }
-            }
-        }
-        // Metadata se nezobrazí, dokud callback nedokončí analýzu barev
     }
 }
 
@@ -1356,13 +1922,13 @@ struct MetaLine: View {
     let value: String
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Spacing.xSmall) {
             Text(label)
                 .foregroundColor(.secondary)
             Text(value)
                 .foregroundColor(.primary)
         }
-        .font(.system(size: 10))
+        .font(DS.Typography.caption2)
     }
 }
 
@@ -1383,16 +1949,55 @@ struct SelectionSummaryView: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DS.Spacing.xxSmall) {
             Image(systemName: "doc.text")
-                .font(.system(size: 10))
+                .font(DS.Typography.caption2)
                 .foregroundColor(.secondary)
             Text(summary)
-                .font(.system(size: 10))
+                .font(DS.Typography.caption2)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+// MARK: - Large Format Pricing Helpers
+
+/// Skupiny velkoformátových stránek dle šíře role a barevnosti
+private struct LFGroup: Identifiable {
+    let roll: Int       // šíře role v mm: 297, 420, 594, 841, 914
+    let isColor: Bool
+    var pageCount: Int = 0
+    var totalLengthCm: Double = 0.0
+    var id: String { "\(roll)-\(isColor)" }
+}
+
+/// Dostupné šíře rolí v mm (od nejmenší)
+private let lfRollWidths = [297, 420, 594, 841, 914]
+
+/// Vrátí true pro velkoformátový výkres: kratší strana ≥ 295 mm A delší strana > 420 mm
+/// Tzn. od formátu 297×421 mm a více (A3 297×420 mm ještě NE, 297×421 mm a větší ANO)
+private func lfIsLargePage(_ size: CGSize) -> Bool {
+    let wMM    = Double(size.width)  * 0.352777778
+    let hMM    = Double(size.height) * 0.352777778
+    let narrow = min(wMM, hMM)
+    let long   = max(wMM, hMM)
+    return narrow >= 295 && long > 420
+}
+
+/// Nejmenší šíře role, která pojme kratší stranu stránky
+private func lfRollWidth(for size: CGSize) -> Int {
+    let wMM = Double(size.width)  * 0.352777778
+    let hMM = Double(size.height) * 0.352777778
+    let narrow = min(wMM, hMM)
+    for w in lfRollWidths { if Double(w) >= narrow - 5 { return w } }
+    return 914
+}
+
+/// Délka výtisku v cm (zaokrouhleno nahoru)
+private func lfLengthCm(for size: CGSize) -> Double {
+    let longMM = max(Double(size.width), Double(size.height)) * 0.352777778
+    return ceil(longMM / 10.0)
 }
 
 // MARK: - File Price Panel
@@ -1417,6 +2022,29 @@ struct FilePricePanel: View {
     @AppStorage("price.a3.col.10")  private var a3col10:  Double = 12.0
     @AppStorage("price.a3.col.50")  private var a3col50:  Double = 10.0
     @AppStorage("price.a3.col.100") private var a3col100: Double = 8.0
+    // Velkoformátový tisk – ČB Kč/cm
+    @AppStorage("price.lf.914.bw")  private var lf914bw:  Double = 0.63
+    @AppStorage("price.lf.841.bw")  private var lf841bw:  Double = 0.57
+    @AppStorage("price.lf.594.bw")  private var lf594bw:  Double = 0.51
+    @AppStorage("price.lf.420.bw")  private var lf420bw:  Double = 0.34
+    @AppStorage("price.lf.297.bw")  private var lf297bw:  Double = 0.23
+    // Velkoformátový tisk – Barevně Kč/cm
+    @AppStorage("price.lf.914.col") private var lf914col: Double = 1.30
+    @AppStorage("price.lf.841.col") private var lf841col: Double = 1.25
+    @AppStorage("price.lf.594.col") private var lf594col: Double = 1.00
+    @AppStorage("price.lf.420.col") private var lf420col: Double = 0.75
+    @AppStorage("price.lf.297.col") private var lf297col: Double = 0.50
+    // Složení výkresů – Kč/výkres
+    @AppStorage("price.lf.914.fold") private var lf914fold: Double = 9.0
+    @AppStorage("price.lf.841.fold") private var lf841fold: Double = 7.0
+    @AppStorage("price.lf.594.fold") private var lf594fold: Double = 5.0
+    @AppStorage("price.lf.420.fold") private var lf420fold: Double = 4.0
+    @AppStorage("price.lf.297.fold") private var lf297fold: Double = 2.0
+
+    /// Globální přepínač složení – platí pro všechny velkoformátové výkresy ve výběru
+    @State private var foldingEnabled: Bool = false
+    /// Globální přepínač ČB tisku – pamatuje se napříč úlohami
+    @AppStorage("price.forceBlackWhite") private var forceBlackWhite: Bool = false
 
     private var selectedPDFFiles: [FileItem] {
         appState.files.filter {
@@ -1424,32 +2052,57 @@ struct FilePricePanel: View {
         }
     }
 
+    /// True pokud alespoň jeden vybraný soubor obsahuje velkoformátové stránky
+    private var hasLargeFormatFiles: Bool {
+        selectedPDFFiles.contains { file in
+            guard let sizes = appState.pdfMetadataCache[file.id]?.pageSizes else { return false }
+            return sizes.contains { lfIsLargePage($0) }
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Spacing.xSmall) {
             // Záhlaví
-            HStack(spacing: 4) {
+            HStack(spacing: DS.Spacing.xxSmall) {
                 Image(systemName: "eurosign.circle")
-                    .font(.system(size: 10))
+                    .font(DS.Typography.caption2)
                     .foregroundColor(.secondary)
                 Text("Cena tisku")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DS.Typography.captionSemibold)
                     .foregroundColor(.secondary)
             }
 
             if selectedPDFFiles.isEmpty {
                 Text("Žádné PDF soubory ve výběru")
-                    .font(.system(size: 10))
+                    .font(DS.Typography.caption2)
                     .foregroundColor(.secondary)
             } else {
                 ForEach(selectedPDFFiles) { file in
-                    FilePriceRow(file: file)
+                    FilePriceRow(file: file, foldingEnabled: foldingEnabled, forceBlackWhite: forceBlackWhite)
                 }
+
+                // Složení výkresů – zobrazit jen pokud jsou velkoformátové stránky
+                if hasLargeFormatFiles {
+                    Divider()
+                    Toggle(isOn: $foldingEnabled) {
+                        Text("Složení výkresů")
+                            .font(DS.Typography.caption2)
+                    }
+                    .toggleStyle(.checkbox)
+                }
+
+                Divider()
+                Toggle(isOn: $forceBlackWhite) {
+                    Text("Celé černobíle")
+                        .font(DS.Typography.caption2)
+                }
+                .toggleStyle(.checkbox)
 
                 if selectedPDFFiles.count > 1 {
                     Divider()
                     HStack {
                         Text("Celkem:")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(DS.Typography.captionSemibold)
                         Spacer()
                         let total = selectedPDFFiles.reduce(0.0) { $0 + priceForFile($1) }
                         Text(priceString(total))
@@ -1467,26 +2120,97 @@ struct FilePricePanel: View {
     private func triggerMissingLoads() {
         for file in selectedPDFFiles {
             appState.loadPDFMetadataIfNeeded(for: file)
+            // Pokud metadata jsou v cache ale GS ještě neproběhl, spustí ho
+            appState.ensureColorAnalysis(for: file)
         }
     }
 
     // MARK: Výpočet ceny pro jeden soubor
 
     func priceForFile(_ file: FileItem) -> Double {
-        let a3 = isA3(file.pageSize)
         let meta = appState.pdfMetadataCache[file.id]
-        let bwCount: Int
-        let colorCount: Int
+        let totalBW:    Int
+        let totalColor: Int
         if let m = meta, (m.colorPageCount + m.blackWhitePageCount) > 0 {
-            bwCount    = m.blackWhitePageCount
-            colorCount = m.colorPageCount
+            if forceBlackWhite {
+                totalBW    = m.blackWhitePageCount + m.colorPageCount
+                totalColor = 0
+            } else {
+                totalBW    = m.blackWhitePageCount
+                totalColor = m.colorPageCount
+            }
         } else {
-            // GS analýza ještě nedoběhla — považujeme vše za ČB
-            bwCount    = file.pageCount
-            colorCount = 0
+            totalBW    = file.pageCount
+            totalColor = 0
         }
-        return Double(bwCount)    * unitPrice(count: bwCount,    isA3: a3, isColor: false)
-             + Double(colorCount) * unitPrice(count: colorCount, isA3: a3, isColor: true)
+
+        // Velkoformátové skupiny
+        let lfGroups = computeLFGroups(meta: meta, forceBlackWhite: forceBlackWhite)
+        let lfBWPages = lfGroups.reduce(0) { $0 + $1.pageCount }
+
+        // Standardní stránky (A4/A3) = celkové minus velkoformátové
+        let stdBW    = max(0, totalBW    - lfBWPages)
+        let stdColor = max(0, totalColor)
+        let a3       = isA3(file.pageSize)
+
+        var total = Double(stdBW)    * unitPrice(count: stdBW,    isA3: a3, isColor: false)
+                  + Double(stdColor) * unitPrice(count: stdColor, isA3: a3, isColor: true)
+
+        // Velkoformátové stránky
+        for g in lfGroups {
+            total += g.totalLengthCm * lfPricePerCm(roll: g.roll, isColor: g.isColor)
+            if foldingEnabled {
+                total += Double(g.pageCount) * lfFoldPrice(roll: g.roll)
+            }
+        }
+        return total
+    }
+
+    /// Sestaví skupiny velkoformátových stránek z metadat
+    fileprivate func computeLFGroups(meta: PDFMetadata?, forceBlackWhite: Bool = false) -> [LFGroup] {
+        guard let sizes = meta?.pageSizes, !sizes.isEmpty else { return [] }
+        let colorNums = forceBlackWhite ? [] : (meta?.colorPageNumbers ?? [])
+        var dict: [String: LFGroup] = [:]
+        for (i, size) in sizes.enumerated() {
+            guard lfIsLargePage(size) else { continue }
+            let roll      = lfRollWidth(for: size)
+            let lengthCm  = lfLengthCm(for: size)
+            let isColor   = colorNums.contains(i + 1)
+            let key       = "\(roll)-\(isColor)"
+            dict[key, default: LFGroup(roll: roll, isColor: isColor)].pageCount += 1
+            dict[key]!.totalLengthCm += lengthCm
+        }
+        return dict.values.sorted { $0.roll > $1.roll }
+    }
+
+    func lfPricePerCm(roll: Int, isColor: Bool) -> Double {
+        if isColor {
+            switch roll {
+            case 914: return lf914col
+            case 841: return lf841col
+            case 594: return lf594col
+            case 420: return lf420col
+            default:  return lf297col
+            }
+        } else {
+            switch roll {
+            case 914: return lf914bw
+            case 841: return lf841bw
+            case 594: return lf594bw
+            case 420: return lf420bw
+            default:  return lf297bw
+            }
+        }
+    }
+
+    func lfFoldPrice(roll: Int) -> Double {
+        switch roll {
+        case 914: return lf914fold
+        case 841: return lf841fold
+        case 594: return lf594fold
+        case 420: return lf420fold
+        default:  return lf297fold
+        }
     }
 
     private func isA3(_ size: CGSize) -> Bool {
@@ -1529,8 +2253,10 @@ struct FilePricePanel: View {
 struct FilePriceRow: View {
     @EnvironmentObject var appState: AppState
     let file: FileItem
+    let foldingEnabled: Bool
+    var forceBlackWhite: Bool = false
 
-    // Ceny z AppStorage — musí mít stejné klíče
+    // Ceny A4/A3 z AppStorage
     @AppStorage("price.a4.bw.1")    private var a4bw1:    Double = 2.0
     @AppStorage("price.a4.bw.10")   private var a4bw10:   Double = 1.5
     @AppStorage("price.a4.bw.50")   private var a4bw50:   Double = 1.2
@@ -1547,34 +2273,108 @@ struct FilePriceRow: View {
     @AppStorage("price.a3.col.10")  private var a3col10:  Double = 12.0
     @AppStorage("price.a3.col.50")  private var a3col50:  Double = 10.0
     @AppStorage("price.a3.col.100") private var a3col100: Double = 8.0
+    // Ceny velkoformátového tisku z AppStorage
+    @AppStorage("price.lf.914.bw")   private var lf914bw:   Double = 0.63
+    @AppStorage("price.lf.841.bw")   private var lf841bw:   Double = 0.57
+    @AppStorage("price.lf.594.bw")   private var lf594bw:   Double = 0.51
+    @AppStorage("price.lf.420.bw")   private var lf420bw:   Double = 0.34
+    @AppStorage("price.lf.297.bw")   private var lf297bw:   Double = 0.23
+    @AppStorage("price.lf.914.col")  private var lf914col:  Double = 1.30
+    @AppStorage("price.lf.841.col")  private var lf841col:  Double = 1.25
+    @AppStorage("price.lf.594.col")  private var lf594col:  Double = 1.00
+    @AppStorage("price.lf.420.col")  private var lf420col:  Double = 0.75
+    @AppStorage("price.lf.297.col")  private var lf297col:  Double = 0.50
+    @AppStorage("price.lf.914.fold") private var lf914fold: Double = 9.0
+    @AppStorage("price.lf.841.fold") private var lf841fold: Double = 7.0
+    @AppStorage("price.lf.594.fold") private var lf594fold: Double = 5.0
+    @AppStorage("price.lf.420.fold") private var lf420fold: Double = 4.0
+    @AppStorage("price.lf.297.fold") private var lf297fold: Double = 2.0
 
-    private var panel: FilePricePanel { FilePricePanel() }
+    // MARK: – Datový model pro jeden řádek výpisu
+
+    private struct PageLine: Identifiable {
+        enum Kind {
+            case stdBW(sizeLabel: String)
+            case stdColor(sizeLabel: String)
+            case lfBW(roll: Int, lengthCm: Double)
+            case lfColor(roll: Int, lengthCm: Double)
+        }
+        let pageNumber: Int
+        var id: Int { pageNumber }
+        let kind: Kind
+
+        var isVF: Bool {
+            switch kind { case .lfBW, .lfColor: true; default: false }
+        }
+        var isColor: Bool {
+            switch kind { case .stdColor, .lfColor: true; default: false }
+        }
+        var roll: Int? {
+            switch kind { case .lfBW(let r, _), .lfColor(let r, _): r; default: nil }
+        }
+        var lengthCm: Double? {
+            switch kind { case .lfBW(_, let l), .lfColor(_, let l): l; default: nil }
+        }
+    }
+
+    // MARK: – Computed
 
     private var meta: PDFMetadata? { appState.pdfMetadataCache[file.id] }
-    private var isA3: Bool {
-        let w = file.pageSize.width  * 0.352777778
-        let h = file.pageSize.height * 0.352777778
-        return (abs(w - 297) < 10 && abs(h - 420) < 10)
-            || (abs(w - 420) < 10 && abs(h - 297) < 10)
-    }
-    private var sizeLabel: String { isA3 ? "A3" : "A4" }
 
-    private var bwCount: Int {
-        guard let m = meta, (m.colorPageCount + m.blackWhitePageCount) > 0 else {
-            return file.pageCount
-        }
-        return m.blackWhitePageCount
-    }
-    private var colorCount: Int {
-        guard let m = meta, (m.colorPageCount + m.blackWhitePageCount) > 0 else { return 0 }
-        return m.colorPageCount
-    }
     private var isAnalyzing: Bool {
         meta == nil || (meta!.colorPageCount == 0 && meta!.blackWhitePageCount == 0
                         && PageColorAnalyzer.shared.isGSAvailable)
     }
 
-    private func up(_ count: Int, isColor: Bool) -> Double {
+    /// Vrátí per-page seznam pokud jsou k dispozici pageSizes, jinak nil
+    private var pageLines: [PageLine]? {
+        guard let sizes = meta?.pageSizes, !sizes.isEmpty else { return nil }
+        let colorNums = forceBlackWhite ? [] : (meta?.colorPageNumbers ?? [])
+
+        // Pomocná: je stránka A3?
+        func pageIsA3(_ s: CGSize) -> Bool {
+            let w = Double(s.width) * 0.352777778
+            let h = Double(s.height) * 0.352777778
+            return (abs(w - 297) < 10 && abs(h - 420) < 10)
+                || (abs(w - 420) < 10 && abs(h - 297) < 10)
+        }
+
+        // 1. průchod – kategorizace
+        struct RawPage {
+            let num: Int; let isVF: Bool; let isColor: Bool
+            let isA3: Bool; let roll: Int?; let lengthCm: Double?
+        }
+        let raw: [RawPage] = sizes.enumerated().map { (i, size) in
+            let num     = i + 1
+            let isColor = colorNums.contains(num)
+            if lfIsLargePage(size) {
+                return RawPage(num: num, isVF: true, isColor: isColor, isA3: false,
+                               roll: lfRollWidth(for: size), lengthCm: lfLengthCm(for: size))
+            } else {
+                return RawPage(num: num, isVF: false, isColor: isColor,
+                               isA3: pageIsA3(size), roll: nil, lengthCm: nil)
+            }
+        }
+
+        // 2. průchod – sestavení PageLine
+        return raw.map { p in
+            if p.isVF, let r = p.roll, let l = p.lengthCm {
+                return PageLine(pageNumber: p.num,
+                                kind: p.isColor ? .lfColor(roll: r, lengthCm: l)
+                                                : .lfBW(roll: r, lengthCm: l))
+            } else {
+                let label = p.isA3 ? "A3" : "A4"
+                return PageLine(pageNumber: p.num,
+                                kind: p.isColor ? .stdColor(sizeLabel: label)
+                                                : .stdBW(sizeLabel: label))
+            }
+        }
+        .sorted { $0.pageNumber < $1.pageNumber }
+    }
+
+    // MARK: – Ceny
+
+    private func stdUnitPrice(count: Int, isA3: Bool, isColor: Bool) -> Double {
         guard count > 0 else { return 0 }
         let t = count >= 100 ? 100 : count >= 50 ? 50 : count >= 10 ? 10 : 1
         switch (isA3, isColor, t) {
@@ -1597,60 +2397,173 @@ struct FilePriceRow: View {
         }
     }
 
-    private var totalPrice: Double {
-        Double(bwCount) * up(bwCount, isColor: false)
-      + Double(colorCount) * up(colorCount, isColor: true)
+    private func lfPricePerCm(roll: Int, isColor: Bool) -> Double {
+        if isColor {
+            switch roll {
+            case 914: return lf914col; case 841: return lf841col
+            case 594: return lf594col; case 420: return lf420col; default: return lf297col
+            }
+        } else {
+            switch roll {
+            case 914: return lf914bw; case 841: return lf841bw
+            case 594: return lf594bw; case 420: return lf420bw; default: return lf297bw
+            }
+        }
     }
 
+    private func lfFoldPrice(_ roll: Int) -> Double {
+        switch roll {
+        case 914: return lf914fold; case 841: return lf841fold
+        case 594: return lf594fold; case 420: return lf420fold; default: return lf297fold
+        }
+    }
+
+    // MARK: – Výpočet ceny – závisí na celkových počtech pro tier pricing
+
+    /// Spočítá ceny a vrátí (cena řádku, popis řádku) pro každou stránku
+    private func buildDisplayLines() -> (lines: [(pageNum: Int, label: String, price: Double, isFold: Bool)], total: Double, bwTotal: Int, colorTotal: Int) {
+        guard let raw = pageLines else {
+            // Fallback: nemáme pageSizes – use file-level counts
+            let gsOK = (meta?.colorPageCount ?? 0) + (meta?.blackWhitePageCount ?? 0) > 0
+            let bwCnt: Int
+            let colCnt: Int
+            if forceBlackWhite {
+                bwCnt  = gsOK ? (meta!.blackWhitePageCount + meta!.colorPageCount) : file.pageCount
+                colCnt = 0
+            } else {
+                bwCnt  = gsOK ? (meta!.blackWhitePageCount) : file.pageCount
+                colCnt = gsOK ? (meta!.colorPageCount)      : 0
+            }
+            let firstIsA3: Bool = {
+                let w = file.pageSize.width  * 0.352777778
+                let h = file.pageSize.height * 0.352777778
+                return (abs(w - 297) < 10 && abs(h - 420) < 10)
+                    || (abs(w - 420) < 10 && abs(h - 297) < 10)
+            }()
+            let up_bw  = stdUnitPrice(count: bwCnt,  isA3: firstIsA3, isColor: false)
+            let up_col = stdUnitPrice(count: colCnt, isA3: firstIsA3, isColor: true)
+            let sizeL  = firstIsA3 ? "A3" : "A4"
+            var out: [(pageNum: Int, label: String, price: Double, isFold: Bool)] = []
+            if bwCnt  > 0 { out.append((0, "\(sizeL) BLACK: \(bwCnt) str × \(String(format: "%.2f", up_bw))", Double(bwCnt) * up_bw, false)) }
+            if colCnt > 0 { out.append((0, "\(sizeL) CMYK: \(colCnt) str × \(String(format: "%.2f", up_col))", Double(colCnt) * up_col, false)) }
+            let total = Double(bwCnt) * up_bw + Double(colCnt) * up_col
+            return (out, total, bwCnt, colCnt)
+        }
+
+        // Spočítej celkové počty pro tier pricing
+        let cA4BW  = raw.filter { if case .stdBW(let s)   = $0.kind { return s == "A4" } ; return false }.count
+        let cA4Col = raw.filter { if case .stdColor(let s) = $0.kind { return s == "A4" } ; return false }.count
+        let cA3BW  = raw.filter { if case .stdBW(let s)   = $0.kind { return s == "A3" } ; return false }.count
+        let cA3Col = raw.filter { if case .stdColor(let s) = $0.kind { return s == "A3" } ; return false }.count
+
+        var out: [(pageNum: Int, label: String, price: Double, isFold: Bool)] = []
+        var total = 0.0
+
+        for line in raw {
+            switch line.kind {
+            case .stdBW(let sz):
+                let up = stdUnitPrice(count: sz == "A3" ? cA3BW : cA4BW, isA3: sz == "A3", isColor: false)
+                let p  = up
+                out.append((line.pageNumber, "Str.\(line.pageNumber): \(sz) BLACK × \(String(format: "%.2f", up)) Kč", p, false))
+                total += p
+
+            case .stdColor(let sz):
+                let up = stdUnitPrice(count: sz == "A3" ? cA3Col : cA4Col, isA3: sz == "A3", isColor: true)
+                let p  = up
+                out.append((line.pageNumber, "Str.\(line.pageNumber): \(sz) CMYK × \(String(format: "%.2f", up)) Kč", p, false))
+                total += p
+
+            case .lfBW(let roll, let len):
+                let ppc = lfPricePerCm(roll: roll, isColor: false)
+                let p   = len * ppc
+                out.append((line.pageNumber,
+                             "Str.\(line.pageNumber): VF BLACK \(roll)mm  \(Int(len))cm × \(String(format: "%.2f", ppc))",
+                             p, false))
+                total += p
+                if foldingEnabled {
+                    let fp = lfFoldPrice(roll)
+                    out.append((line.pageNumber, "  + složení \(roll)mm", fp, true))
+                    total += fp
+                }
+
+            case .lfColor(let roll, let len):
+                let ppc = lfPricePerCm(roll: roll, isColor: true)
+                let p   = len * ppc
+                out.append((line.pageNumber,
+                             "Str.\(line.pageNumber): VF CMYK \(roll)mm  \(Int(len))cm × \(String(format: "%.2f", ppc))",
+                             p, false))
+                total += p
+                if foldingEnabled {
+                    let fp = lfFoldPrice(roll)
+                    out.append((line.pageNumber, "  + složení \(roll)mm", fp, true))
+                    total += fp
+                }
+            }
+        }
+
+        let bwT  = raw.filter { !$0.isColor }.count
+        let colT = raw.filter {  $0.isColor }.count
+        return (out, total, bwT, colT)
+    }
+
+    @State private var showDetails = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // Název souboru (zkrácený)
+        VStack(alignment: .leading, spacing: DS.Spacing.xxxSmall) {
+            // Název souboru
             Text(file.name)
                 .font(.system(size: 10, weight: .medium))
                 .lineLimit(1)
                 .foregroundColor(.primary)
 
             if isAnalyzing && meta == nil {
-                // Metadata se ještě načítají
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Spacing.xxSmall) {
                     ProgressView().scaleEffect(0.5)
                     Text("Analyzuji…")
-                        .font(.system(size: 10))
+                        .font(DS.Typography.caption2)
                         .foregroundColor(.secondary)
                 }
             } else {
-                // ČB řádek
-                if bwCount > 0 {
-                    HStack(spacing: 0) {
-                        Text("\(sizeLabel) ČB: \(bwCount) str × ")
+                let result = buildDisplayLines()
+
+                // Souhrnný řádek s chevronem – vždy viditelný
+                Button(action: { withAnimation(.easeInOut(duration: 0.15)) { showDetails.toggle() } }) {
+                    HStack(spacing: DS.Spacing.xxSmall) {
+                        Image(systemName: showDetails ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 7, weight: .semibold))
                             .foregroundColor(.secondary)
-                        Text(String(format: "%.2f", up(bwCount, isColor: false)))
-                        Text(" = ")
-                            .foregroundColor(.secondary)
-                        Text(String(format: "%.2f Kč", Double(bwCount) * up(bwCount, isColor: false)))
+                            .frame(width: 10)
+                        if result.bwTotal > 0 {
+                            Text("\(result.bwTotal) BLACK")
+                                .foregroundColor(.secondary)
+                        }
+                        if result.colorTotal > 0 {
+                            Text("\(result.colorTotal) CMYK")
+                                .foregroundColor(Color(nsColor: .systemBlue).opacity(0.9))
+                        }
+                        Spacer()
+                        Text(String(format: "%.2f Kč", result.total))
                             .foregroundColor(.primary)
                     }
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(DS.Typography.caption2)
                 }
-                // Barevný řádek
-                if colorCount > 0 {
-                    HStack(spacing: 0) {
-                        Text("\(sizeLabel) Bar: \(colorCount) str × ")
-                            .foregroundColor(.secondary)
-                        Text(String(format: "%.2f", up(colorCount, isColor: true)))
-                        Text(" = ")
-                            .foregroundColor(.secondary)
-                        Text(String(format: "%.2f Kč", Double(colorCount) * up(colorCount, isColor: true)))
-                            .foregroundColor(.primary)
+                .buttonStyle(.plain)
+
+                // Výklápěcí detail stránek
+                if showDetails {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(result.lines.enumerated()), id: \.offset) { _, item in
+                            HStack(spacing: 0) {
+                                Text(item.label)
+                                    .foregroundColor(item.isFold ? .secondary.opacity(0.7) : .secondary)
+                                Spacer()
+                                Text(String(format: "%.2f Kč", item.price))
+                                    .foregroundColor(item.isFold ? .secondary : .primary)
+                            }
+                            .font(DS.Typography.monoSmall)
+                        }
                     }
-                    .font(.system(size: 10, design: .monospaced))
-                }
-                // Celkem za soubor
-                HStack {
-                    Spacer()
-                    Text(String(format: "%.2f Kč", totalPrice))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primary)
+                    .padding(.leading, 12)
                 }
             }
         }
@@ -1668,7 +2581,7 @@ struct FileRowView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Spacing.xSmall) {
             // Obecná ikona podle typu souboru (bez thumbnail)
             Image(systemName: file.fileType.icon)
                 .font(.system(size: 14))
@@ -1678,7 +2591,7 @@ struct FileRowView: View {
             if isEditing {
                 TextField("name", text: $editedName)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(DS.Typography.subheadline)
                     .focused($isFocused)
                     .onSubmit {
                         commitRename()
@@ -1724,7 +2637,7 @@ struct StatusBadge: View {
     let status: FileStatus
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DS.Spacing.xxSmall) {
             if status == .converting || status == .processing {
                 ProgressView()
                     .scaleEffect(0.5)
@@ -1733,8 +2646,10 @@ struct StatusBadge: View {
             }
             Text(status.rawValue)
         }
-        .font(.system(size: 10))
+        .font(DS.Typography.caption2)
         .foregroundColor(status.color)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Status: \(status.rawValue)")
     }
 }
 

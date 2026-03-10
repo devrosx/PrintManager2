@@ -16,7 +16,6 @@ struct CompressionSettings: Codable {
     var removeThumbnails: Bool = true
     var compressFonts: Bool = true
     var downsampleImages: Bool = true
-    var imageDPI: Int = 150
     var dpi: Int = 150
     var compressImages: Bool = true
     var flattenTransparency: Bool = true
@@ -108,10 +107,10 @@ struct CompressionResult: Codable {
 
 /// Debug message for logging
 struct CompressionDebugMessage: Identifiable, Codable {
-    let id = UUID()
-    let message: String
-    let level: Level
-    let timestamp: Date = Date()
+    var id        = UUID()
+    let message:    String
+    let level:      Level
+    var timestamp:  Date = Date()
     
     enum Level: String, Codable {
         case info = "info"

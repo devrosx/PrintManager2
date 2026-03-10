@@ -69,9 +69,16 @@ class GoogleDocsConversionService {
             throw GoogleConversionError.exportFailed
         }
 
-        let outputDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PrintManager-Google", isDirectory: true)
-        try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        // Výstupní PDF do stejné složky jako zdrojový soubor; fallback na /tmp
+        let sourceDir = fileURL.deletingLastPathComponent()
+        let outputDir: URL
+        if FileManager.default.isWritableFile(atPath: sourceDir.path) {
+            outputDir = sourceDir
+        } else {
+            outputDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("PrintManager-Google", isDirectory: true)
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        }
         let outputURL = outputDir
             .appendingPathComponent(fileURL.deletingPathExtension().lastPathComponent)
             .appendingPathExtension("pdf")
@@ -191,7 +198,6 @@ class GoogleOAuthManager: ObservableObject {
                     try await self.exchangeCode(code, verifier: verifier, redirectURI: redirectURI)
                 } catch {
                     self.authError = error.localizedDescription
-                    print("Google OAuth chyba: \(error)")
                 }
             }
         }
@@ -229,15 +235,11 @@ class GoogleOAuthManager: ObservableObject {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, _ in
                 guard let data = data,
                       let request = String(data: data, encoding: .utf8) else {
-                    print("Google OAuth: nepřišla žádná data")
                     return
                 }
-                print("Google OAuth HTTP request:\n\(request.prefix(300))")
                 guard let code = self?.extractCodeFrom(httpRequest: request) else {
-                    print("Google OAuth: nepodařilo se extrahovat code")
                     return
                 }
-                print("Google OAuth: code extrahován (\(code.prefix(20))…)")
 
                 // Vrátíme uživateli hezkou stránku a zavřeme server
                 let html = """
@@ -350,8 +352,6 @@ class GoogleOAuthManager: ObservableObject {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let bodyString = String(data: data, encoding: .utf8) ?? "(prázdná odpověď)"
-        print("Google token endpoint → HTTP \(statusCode): \(bodyString)")
 
         guard statusCode == 200 else {
             isAuthenticated = false

@@ -7,59 +7,158 @@
 
 import SwiftUI
 import UserNotifications
+import AppKit
 
 struct SettingsView: View {
-    @AppStorage("defaultPrinter")    private var defaultPrinter    = ""
-    @AppStorage("defaultCopies")     private var defaultCopies     = 1
-    @AppStorage("defaultTwoSided")   private var defaultTwoSided   = false
-    @AppStorage("defaultCollate")    private var defaultCollate    = true
-    @AppStorage("defaultFitToPage")  private var defaultFitToPage  = false
+    @Binding var isPresented: Bool
+
+    @AppStorage("defaultPrinter")      private var defaultPrinter      = ""
     @AppStorage("autoRefreshPrinters") private var autoRefreshPrinters = true
-    @AppStorage("compressionQuality") private var compressionQuality = 0.7
-    @AppStorage("ocrLanguage")       private var ocrLanguage       = "en"
-    @AppStorage("defaultDPI")        private var defaultDPI        = 300
+    @AppStorage("compressionQuality")  private var compressionQuality  = 0.7
+    @AppStorage("ocrLanguage")         private var ocrLanguage         = "en"
+    @AppStorage("defaultDPI")          private var defaultDPI          = 300
 
     @StateObject private var printManager = PrintManager()
+    @State private var selectedTab: SettingsTab = .general
+
+    // MARK: - Tab definition
+
+    enum SettingsTab: String, CaseIterable {
+        case general      = "Obecné"
+        case pdf          = "PDF"
+        case cloudConvert = "CloudConvert"
+        case ilovepdf     = "iLovePDF"
+        case google       = "Google"
+        case cena         = "Cena"
+        case about        = "About"
+
+        var icon: String {
+            switch self {
+            case .general:      return "gear"
+            case .pdf:          return "doc.fill"
+            case .cloudConvert: return "cloud.fill"
+            case .ilovepdf:     return "heart.circle.fill"
+            case .google:       return "g.circle.fill"
+            case .cena:         return "eurosign.circle"
+            case .about:        return "info.circle"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .general:      return .gray
+            case .pdf:          return .red
+            case .cloudConvert: return .blue
+            case .ilovepdf:     return .pink
+            case .google:       return Color(red: 0.25, green: 0.52, blue: 0.96)
+            case .cena:         return .orange
+            case .about:        return .accentColor
+            }
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
-        TabView {
-            // General Settings
-            GeneralSettingsView(
-                defaultPrinter: $defaultPrinter,
-                defaultCopies: $defaultCopies,
-                defaultTwoSided: $defaultTwoSided,
-                defaultCollate: $defaultCollate,
-                defaultFitToPage: $defaultFitToPage,
-                autoRefreshPrinters: $autoRefreshPrinters,
-                printManager: printManager
-            )
-            .tabItem { Label("General", systemImage: "gear") }
+        VStack(spacing: 0) {
 
-            // PDF Settings
-            PDFSettingsView(
-                compressionQuality: $compressionQuality,
-                ocrLanguage: $ocrLanguage,
-                defaultDPI: $defaultDPI
-            )
-            .tabItem { Label("PDF", systemImage: "doc.fill") }
+            // ── Toolbar ──────────────────────────────────────────────
+            ZStack(alignment: .topTrailing) {
+                HStack(spacing: 2) {
+                    ForEach(SettingsTab.allCases, id: \.self) { tab in
+                        SettingsTabButton(tab: tab, isSelected: selectedTab == tab) {
+                            selectedTab = tab
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
-            // CloudConvert
-            CloudConvertSettingsView()
-                .tabItem { Label("CloudConvert", systemImage: "cloud.fill") }
+                Button {
+                    isPresented = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+                .help("Zavřít")
+            }
+            .background(DS.Colors.windowBackground)
 
-            // Google
-            GoogleSettingsView()
-                .tabItem { Label("Google", systemImage: "g.circle.fill") }
+            Divider()
 
-            // Cena tisku
-            PriceSettingsView()
-                .tabItem { Label("Cena", systemImage: "eurosign.circle") }
-
-            // About
-            AboutView()
-                .tabItem { Label("About", systemImage: "info.circle") }
+            // ── Obsah ─────────────────────────────────────────────────
+            Group {
+                switch selectedTab {
+                case .general:
+                    GeneralSettingsView(
+                        defaultPrinter: $defaultPrinter,
+                        autoRefreshPrinters: $autoRefreshPrinters,
+                        printManager: printManager
+                    )
+                case .pdf:
+                    PDFSettingsView(
+                        compressionQuality: $compressionQuality,
+                        ocrLanguage: $ocrLanguage,
+                        defaultDPI: $defaultDPI
+                    )
+                case .cloudConvert:
+                    CloudConvertSettingsView()
+                case .ilovepdf:
+                    ILovePDFSettingsView()
+                case .google:
+                    GoogleSettingsView()
+                case .cena:
+                    PriceSettingsView()
+                case .about:
+                    AboutView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 580, height: 540)
+        .background {
+            // Cmd+W zavře okno (keyboardShortcut nefunguje na VStack přímo)
+            Button("") { isPresented = false }
+                .keyboardShortcut("w", modifiers: .command)
+                .hidden()
+        }
+    }
+}
+
+// MARK: - Tab Button
+
+private struct SettingsTabButton: View {
+    let tab: SettingsView.SettingsTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 21, weight: .regular))
+                    .foregroundColor(isSelected ? tab.tint : Color.secondary)
+                    .frame(height: 26)
+                Text(LocalizedStringKey(tab.rawValue))
+                    .font(.system(size: 10))
+                    .foregroundColor(isSelected ? tab.tint : .primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? tab.tint.opacity(0.12) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.13), value: isSelected)
     }
 }
 
@@ -89,58 +188,63 @@ struct PriceSettingsView: View {
     @AppStorage("price.a3.col.100") private var a3col100: Double = 8.0
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Záhlaví tabulky
-            HStack(spacing: 0) {
-                Text("Formát / Typ")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                tierHeader("1+")
-                tierHeader("10+")
-                tierHeader("50+")
-                tierHeader("100+")
-                Text("Kč/str")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .frame(width: 42, alignment: .trailing)
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
-            .background(Color(NSColor.controlBackgroundColor))
-
-            Divider()
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    priceRow(label: "A4 ČB",
-                             v1: $a4bw1, v10: $a4bw10, v50: $a4bw50, v100: $a4bw100)
-                    Divider().padding(.leading, 16)
-                    priceRow(label: "A4 Barevně",
-                             v1: $a4col1, v10: $a4col10, v50: $a4col50, v100: $a4col100)
-                    Divider().padding(.leading, 16)
-                    priceRow(label: "A3 ČB",
-                             v1: $a3bw1, v10: $a3bw10, v50: $a3bw50, v100: $a3bw100)
-                    Divider().padding(.leading, 16)
-                    priceRow(label: "A3 Barevně",
-                             v1: $a3col1, v10: $a3col10, v50: $a3col50, v100: $a3col100)
+        ScrollView {
+            VStack(spacing: 0) {
+                // ── Záhlaví tabulky A4/A3 ──
+                HStack(spacing: 0) {
+                    Text("Formát / Typ")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    tierHeader("1+")
+                    tierHeader("10+")
+                    tierHeader("50+")
+                    tierHeader("100+")
+                    Text("Kč/str")
+                        .font(DS.Typography.caption2)
+                        .foregroundColor(.secondary)
+                        .frame(width: 42, alignment: .trailing)
                 }
-            }
+                .font(DS.Typography.captionSemibold)
+                .sectionPadding()
+                .background(DS.Colors.controlBackground)
 
-            Divider()
+                Divider()
 
-            // Vysvětlivka
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Cenová hladina se určí podle celkového počtu stran ve výběru.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("Ceny jsou v Kč za stránku včetně DPH.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                priceRow(label: "A4 ČB",
+                         v1: $a4bw1, v10: $a4bw10, v50: $a4bw50, v100: $a4bw100)
+                Divider().padding(.leading, 16)
+                priceRow(label: "A4 Barevně",
+                         v1: $a4col1, v10: $a4col10, v50: $a4col50, v100: $a4col100)
+                Divider().padding(.leading, 16)
+                priceRow(label: "A3 ČB",
+                         v1: $a3bw1, v10: $a3bw10, v50: $a3bw50, v100: $a3bw100)
+                Divider().padding(.leading, 16)
+                priceRow(label: "A3 Barevně",
+                         v1: $a3col1, v10: $a3col10, v50: $a3col50, v100: $a3col100)
+
+                Divider()
+
+                // ── Velkoformátový tisk (ploter) ──
+                LargeFormatPriceSettingsView()
+
+                Divider()
+
+                // Vysvětlivka
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cenová hladina A4/A3 se určí podle celkového počtu stran ve výběru.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Velkoformátový tisk: cena Kč za cm délky výtisku (délka zaokrouhlena nahoru).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Ceny jsou v Kč včetně DPH.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DS.Spacing.large)
+                .padding(.vertical, DS.Spacing.small)
+                .background(DS.Colors.controlBackground)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color(NSColor.controlBackgroundColor))
         }
     }
 
@@ -157,20 +261,111 @@ struct PriceSettingsView: View {
                           v50: Binding<Double>, v100: Binding<Double>) -> some View {
         HStack(spacing: 0) {
             Text(label)
-                .font(.system(size: 12))
+                .font(DS.Typography.subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             PriceField(value: v1)
             PriceField(value: v10)
             PriceField(value: v50)
             PriceField(value: v100)
             Text("Kč")
-                .font(.system(size: 10))
+                .font(DS.Typography.caption2)
                 .foregroundColor(.secondary)
                 .frame(width: 42, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color(NSColor.windowBackgroundColor))
+        .padding(.horizontal, DS.Spacing.large)
+        .padding(.vertical, DS.Spacing.small)
+        .background(DS.Colors.windowBackground)
+    }
+}
+
+// MARK: - Large Format Price Settings
+
+struct LargeFormatPriceSettingsView: View {
+    // ČB – Kč/cm
+    @AppStorage("price.lf.914.bw") private var lf914bw: Double = 0.63
+    @AppStorage("price.lf.841.bw") private var lf841bw: Double = 0.57
+    @AppStorage("price.lf.594.bw") private var lf594bw: Double = 0.51
+    @AppStorage("price.lf.420.bw") private var lf420bw: Double = 0.34
+    @AppStorage("price.lf.297.bw") private var lf297bw: Double = 0.23
+    // Barevně – Kč/cm
+    @AppStorage("price.lf.914.col") private var lf914col: Double = 1.30
+    @AppStorage("price.lf.841.col") private var lf841col: Double = 1.25
+    @AppStorage("price.lf.594.col") private var lf594col: Double = 1.00
+    @AppStorage("price.lf.420.col") private var lf420col: Double = 0.75
+    @AppStorage("price.lf.297.col") private var lf297col: Double = 0.50
+    // Složení – Kč/výkres
+    @AppStorage("price.lf.914.fold") private var lf914fold: Double = 9.0
+    @AppStorage("price.lf.841.fold") private var lf841fold: Double = 7.0
+    @AppStorage("price.lf.594.fold") private var lf594fold: Double = 5.0
+    @AppStorage("price.lf.420.fold") private var lf420fold: Double = 4.0
+    @AppStorage("price.lf.297.fold") private var lf297fold: Double = 2.0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Záhlaví sekce
+            HStack {
+                Image(systemName: "printer.dotmatrix")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("Velkoformátový tisk – ploter")
+                    .font(DS.Typography.captionSemibold)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            .sectionPadding()
+            .background(DS.Colors.controlBackground)
+
+            Divider()
+
+            // Záhlaví tabulky
+            HStack(spacing: 0) {
+                Text("Šíře role")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("ČB Kč/cm")
+                    .frame(width: 70, alignment: .trailing)
+                    .foregroundColor(.secondary)
+                Text("Bar Kč/cm")
+                    .frame(width: 70, alignment: .trailing)
+                    .foregroundColor(.secondary)
+                Text("Složení Kč")
+                    .frame(width: 74, alignment: .trailing)
+                    .foregroundColor(.secondary)
+            }
+            .font(DS.Typography.caption2)
+            .padding(.horizontal, DS.Spacing.large)
+            .padding(.vertical, DS.Spacing.xxSmall)
+            .background(DS.Colors.controlBackground)
+
+            Divider()
+
+            lfRow(label: "914 mm", bw: $lf914bw, col: $lf914col, fold: $lf914fold)
+            Divider().padding(.leading, 16)
+            lfRow(label: "841 mm", bw: $lf841bw, col: $lf841col, fold: $lf841fold)
+            Divider().padding(.leading, 16)
+            lfRow(label: "594 mm", bw: $lf594bw, col: $lf594col, fold: $lf594fold)
+            Divider().padding(.leading, 16)
+            lfRow(label: "420 mm", bw: $lf420bw, col: $lf420col, fold: $lf420fold)
+            Divider().padding(.leading, 16)
+            lfRow(label: "297 mm", bw: $lf297bw, col: $lf297col, fold: $lf297fold)
+        }
+    }
+
+    @ViewBuilder
+    private func lfRow(label: String,
+                       bw: Binding<Double>,
+                       col: Binding<Double>,
+                       fold: Binding<Double>) -> some View {
+        HStack(spacing: 0) {
+            Text(label)
+                .font(DS.Typography.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            PriceField(value: bw)
+            PriceField(value: col)
+            PriceField(value: fold)
+        }
+        .padding(.horizontal, DS.Spacing.large)
+        .padding(.vertical, DS.Spacing.small)
+        .background(DS.Colors.windowBackground)
     }
 }
 
@@ -184,7 +379,7 @@ private struct PriceField: View {
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
             .frame(width: 58)
-            .font(.system(size: 11, design: .monospaced))
+            .font(DS.Typography.mono)
             .onAppear { text = fmt(value) }
             .onSubmit { commit() }
             .onChange(of: value) { text = fmt($0) }
@@ -206,10 +401,6 @@ private struct PriceField: View {
 
 struct GeneralSettingsView: View {
     @Binding var defaultPrinter: String
-    @Binding var defaultCopies: Int
-    @Binding var defaultTwoSided: Bool
-    @Binding var defaultCollate: Bool
-    @Binding var defaultFitToPage: Bool
     @Binding var autoRefreshPrinters: Bool
     @ObservedObject var printManager: PrintManager
 
@@ -219,17 +410,16 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Default Print Settings") {
-                Picker("Printer:", selection: $defaultPrinter) {
-                    Text("System Default").tag("")
+            Section("Výchozí tiskárna") {
+                Picker("Tiskárna:", selection: $defaultPrinter) {
+                    Text("Systémová výchozí").tag("")
                     ForEach(printManager.availablePrinters, id: \.self) { printer in
                         Text(printer).tag(printer)
                     }
                 }
-                Stepper("Copies: \(defaultCopies)", value: $defaultCopies, in: 1...999)
-                Toggle("Two-sided printing", isOn: $defaultTwoSided)
-                Toggle("Collate pages", isOn: $defaultCollate)
-                Toggle("Fit to page", isOn: $defaultFitToPage)
+                Text("Vybraná tiskárna bude při spuštění automaticky označena v seznamu tiskáren.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("Zobrazení") {
@@ -243,19 +433,18 @@ struct GeneralSettingsView: View {
                     Text("16").tag(16.0)
                 }
                 .pickerStyle(.menu)
-                .frame(maxWidth: 340)
             }
 
-            Section("Behavior") {
-                Toggle("Auto-refresh printer list", isOn: $autoRefreshPrinters)
-                Toggle("Always on top", isOn: $alwaysOnTop)
+            Section("Chování") {
+                Toggle("Automaticky obnovit seznam tiskáren", isOn: $autoRefreshPrinters)
+                Toggle("Vždy navrchu", isOn: $alwaysOnTop)
                     .onChange(of: alwaysOnTop) { val in
                         applyWindowLevel(floating: val)
                     }
             }
 
-            Section("Notifications") {
-                Toggle("Enable notifications", isOn: $notificationsEnabled)
+            Section("Oznámení") {
+                Toggle("Povolit oznámení", isOn: $notificationsEnabled)
                     .onChange(of: notificationsEnabled) { newValue in
                         if newValue {
                             UNUserNotificationCenter.current()
@@ -263,13 +452,15 @@ struct GeneralSettingsView: View {
                         }
                     }
                 if !notificationsEnabled {
-                    Text("Notifications are disabled.")
+                    Text("Oznámení jsou zakázána.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
+
+            ImpositionGeneralSettingsSection()
         }
-        .padding()
+        .formStyle(.grouped)
     }
 
     private func applyWindowLevel(floating: Bool) {
@@ -277,6 +468,29 @@ struct GeneralSettingsView: View {
             for w in NSApp.windows where w.isVisible && !w.isSheet {
                 w.level = floating ? .floating : .normal
             }
+        }
+    }
+}
+
+// MARK: - Imposition Settings Section (použito v GeneralSettingsView)
+
+private struct ImpositionGeneralSettingsSection: View {
+    @AppStorage("printerMarginMM") private var printerMarginMM: Double = 5.0
+
+    var body: some View {
+        Section("Imposition") {
+            HStack {
+                Text("Tiskový okraj tiskárny (mm):")
+                Spacer()
+                Stepper(value: $printerMarginMM, in: 0...30, step: 0.5) {
+                    TextField("", value: $printerMarginMM, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 60)
+                }
+            }
+            Text("Výchozí okraj od hrany papíru při vytváření imposice.\nTiskárna obvykle nemůže tisknout blíže k okraji.")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
 }
@@ -303,37 +517,36 @@ struct PDFSettingsView: View {
     
     var body: some View {
         Form {
-            Section("Compression") {
-                VStack(alignment: .leading) {
-                    Text("Quality: \(Int(compressionQuality * 100))%")
+            Section("Komprese") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Kvalita: \(Int(compressionQuality * 100))%")
                     Slider(value: $compressionQuality, in: 0.1...1.0)
-                    Text("Lower quality = smaller file size")
+                    Text("Nižší kvalita = menší soubor")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             Section("OCR") {
-                Picker("Language:", selection: $ocrLanguage) {
+                Picker("Jazyk:", selection: $ocrLanguage) {
                     ForEach(languages, id: \.0) { code, name in
                         Text(name).tag(code)
                     }
                 }
             }
-            
-            Section("Rasterization") {
+
+            Section("Rasterizace") {
                 Picker("DPI:", selection: $defaultDPI) {
-                    Text("150 DPI (Draft)").tag(150)
-                    Text("300 DPI (Standard)").tag(300)
-                    Text("600 DPI (High Quality)").tag(600)
+                    Text("150 DPI (náhled)").tag(150)
+                    Text("300 DPI (standard)").tag(300)
+                    Text("600 DPI (vysoká kvalita)").tag(600)
                 }
-                
-                Text("Higher DPI = larger file size")
+                Text("Vyšší DPI = větší soubor")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .padding()
+        .formStyle(.grouped)
     }
 }
 
@@ -376,7 +589,7 @@ struct AboutView: View {
                 .font(.title)
                 .bold()
             
-            Text("Version 1.0")
+            Text("Version 2.0")
                 .foregroundColor(.secondary)
             
             Divider()
@@ -439,7 +652,7 @@ struct GoogleSettingsView: View {
             Section {
                 HStack(spacing: 10) {
                     Image(systemName: "g.circle.fill")
-                        .font(.system(size: 28))
+                        .font(DS.Typography.mediumIcon)
                         .foregroundColor(.blue)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Google Drive konverze")
@@ -499,7 +712,7 @@ struct GoogleSettingsView: View {
                 HStack {
                     Text("Client ID:")
                         .frame(width: 110, alignment: .trailing)
-                    TextField("681515…apps.googleusercontent.com", text: $clientId)
+                    TextField("xxxxxxxxx.apps.googleusercontent.com", text: $clientId)
                         .textFieldStyle(.roundedBorder)
                 }
 
@@ -508,9 +721,9 @@ struct GoogleSettingsView: View {
                         .frame(width: 110, alignment: .trailing)
                     Group {
                         if showSecret {
-                            TextField("GOCSPX-…", text: $clientSecret)
+                            TextField("Client Secret", text: $clientSecret)
                         } else {
-                            SecureField("GOCSPX-…", text: $clientSecret)
+                            SecureField("Client Secret", text: $clientSecret)
                         }
                     }
                     .textFieldStyle(.roundedBorder)
@@ -546,7 +759,8 @@ struct GoogleSettingsView: View {
                 .foregroundColor(.secondary)
             }
         }
-        .padding()
+        .formStyle(.grouped)
+        .onDisappear { showSecret = false }
     }
 }
 
@@ -568,7 +782,7 @@ struct CloudConvertSettingsView: View {
             Section {
                 HStack(spacing: 10) {
                     Image(systemName: "cloud.fill")
-                        .font(.system(size: 28))
+                        .font(DS.Typography.mediumIcon)
                         .foregroundColor(.blue)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("CloudConvert")
@@ -594,9 +808,9 @@ struct CloudConvertSettingsView: View {
                         .frame(width: 80, alignment: .trailing)
                     Group {
                         if showApiKey {
-                            TextField("eyJ0eXAiOiJKV1QiLCJhbGci…", text: $apiKey)
+                            TextField("API Key", text: $apiKey)
                         } else {
-                            SecureField("eyJ0eXAiOiJKV1QiLCJhbGci…", text: $apiKey)
+                            SecureField("API Key", text: $apiKey)
                         }
                     }
                     .textFieldStyle(.roundedBorder)
@@ -655,7 +869,8 @@ struct CloudConvertSettingsView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding()
+        .formStyle(.grouped)
+        .onDisappear { showApiKey = false }
     }
 
     private func testConnection() {
@@ -691,6 +906,156 @@ extension CloudConvertSettingsView.TestStatus: Equatable {
     }
 }
 
+// MARK: - iLovePDF Settings
+
+struct ILovePDFSettingsView: View {
+    @AppStorage("iLovePDFPublicKey") private var publicKey = ""
+    @AppStorage("iLovePDFSecretKey") private var secretKey = ""
+
+    @State private var showKeys = false
+    @State private var testStatus: TestStatus = .idle
+
+    enum TestStatus {
+        case idle, testing, ok, failed(String)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 10) {
+                    Image(systemName: "heart.circle.fill")
+                        .font(DS.Typography.mediumIcon)
+                        .foregroundColor(.pink)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("iLovePDF")
+                            .font(.headline)
+                        Text("Online konverze Office souborů do PDF")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section("Přihlašovací údaje") {
+                HStack {
+                    Text("Public Key:")
+                        .frame(width: 90, alignment: .trailing)
+                    Group {
+                        if showKeys {
+                            TextField("project_public_...", text: $publicKey)
+                        } else {
+                            SecureField("project_public_...", text: $publicKey)
+                        }
+                    }
+                    .textFieldStyle(.roundedBorder)
+
+                    Button(action: { showKeys.toggle() }) {
+                        Image(systemName: showKeys ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(showKeys ? "Skrýt klíč" : "Zobrazit klíč")
+                }
+
+                Text("ℹ️ Secret Key není potřeba - API používá pouze Public Key")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Spacer()
+                    Button("Získat API klíče") {
+                        NSWorkspace.shared.open(
+                            URL(string: "https://developer.ilovepdf.com/")!
+                        )
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+            }
+
+            Section("Test spojení") {
+                HStack {
+                    Button("Ověřit Public Key") {
+                        testConnection()
+                    }
+                    .disabled(publicKey.isEmpty || testStatus == .testing)
+
+                    switch testStatus {
+                    case .idle:
+                        EmptyView()
+                    case .testing:
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    case .ok:
+                        Label("OK", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    case .failed(let msg):
+                        Label(msg, systemImage: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                            .font(.caption)
+                            .lineLimit(2)
+                    }
+                }
+            }
+
+            Section("Informace") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("• Free tier: 250 requestů/měsíc zdarma")
+                    Text("• Registrace na: https://developer.ilovepdf.com/")
+                    Text("• Potřebuješ pouze Public Key (začíná project_public_...)")
+                    Text("• Secret Key se nepoužívá pro API (jen pro webhooks)")
+                    Text("• Klíč se ukládá lokálně v nastavení aplikace")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onDisappear { showKeys = false }
+    }
+
+    private func testConnection() {
+        testStatus = .testing
+        let pubKey = publicKey
+        Task {
+            do {
+                // Test API - iLovePDF uses ONLY public key in Authorization
+                let url = URL(string: "https://api.ilovepdf.com/v1/start/officepdf")!
+
+                var req = URLRequest(url: url)
+                req.httpMethod = "GET"
+                req.setValue("application/json", forHTTPHeaderField: "Accept")
+                req.setValue("Bearer \(pubKey)", forHTTPHeaderField: "Authorization")
+
+                let (data, response) = try await URLSession.shared.data(for: req)
+                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                    await MainActor.run { testStatus = .ok }
+                } else {
+                    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        await MainActor.run { testStatus = .failed("HTTP \(code) – \(responseString)") }
+                    } else {
+                        await MainActor.run { testStatus = .failed("HTTP \(code) – neplatné klíče?") }
+                    }
+                }
+            } catch {
+                await MainActor.run { testStatus = .failed(error.localizedDescription) }
+            }
+        }
+    }
+}
+
+extension ILovePDFSettingsView.TestStatus: Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.idle, .idle), (.testing, .testing), (.ok, .ok): return true
+        case (.failed(let a), .failed(let b)): return a == b
+        default: return false
+        }
+    }
+}
+
 #Preview {
-    SettingsView()
+    SettingsView(isPresented: .constant(true))
 }

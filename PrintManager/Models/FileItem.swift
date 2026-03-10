@@ -24,6 +24,8 @@ struct FileItem: Identifiable, Hashable {
     /// Inkrementuje se při každé modifikaci obsahu (rotace, crop…).
     /// Views ji používají pro detekci změny obsahu i při stejném UUID.
     var contentVersion: Int = 0
+    /// true = soubor byl vytvořen operací PrintManageru (ne přidán uživatelem ručně)
+    var isConverted: Bool = false
     
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
@@ -78,6 +80,7 @@ struct FileItem: Identifiable, Hashable {
     
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+        hasher.combine(contentVersion)
     }
 
     /// Porovnává i obsah, aby SwiftUI Table vědělo, že se řádek změnil
@@ -90,6 +93,7 @@ struct FileItem: Identifiable, Hashable {
             && lhs.name == rhs.name
             && lhs.url == rhs.url
             && lhs.contentVersion == rhs.contentVersion
+            && lhs.isConverted == rhs.isConverted
     }
 }
 
@@ -308,6 +312,7 @@ enum ImportMethod: String, CaseIterable {
     case openOffice = "OpenOffice"
     case cloudConvert = "CloudConvert"
     case googleDrive = "Google Drive"
+    case iLovePDF = "iLovePDF (Web)"
 
     var description: String {
         switch self {
@@ -315,6 +320,7 @@ enum ImportMethod: String, CaseIterable {
         case .openOffice:   return "OpenOffice / LibreOffice (lokálně)"
         case .cloudConvert: return "CloudConvert (online, API klíč)"
         case .googleDrive:  return "Google Drive (online, Google účet)"
+        case .iLovePDF:     return "iLovePDF (experimentální, bez API)"
         }
     }
 
@@ -324,6 +330,7 @@ enum ImportMethod: String, CaseIterable {
         case .openOffice:   return "desktopcomputer"
         case .cloudConvert: return "cloud.fill"
         case .googleDrive:  return "g.circle.fill"
+        case .iLovePDF:     return "heart.circle.fill"
         }
     }
 }

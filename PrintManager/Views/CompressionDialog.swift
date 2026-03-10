@@ -37,7 +37,6 @@ struct CompressionDialog: View {
             removeThumbnails: false,
             compressFonts: true,
             downsampleImages: false,
-            imageDPI: 300,
             dpi: 300,
             compressImages: true,
             flattenTransparency: true,
@@ -54,7 +53,6 @@ struct CompressionDialog: View {
             removeThumbnails: false,
             compressFonts: true,
             downsampleImages: true,
-            imageDPI: 150,
             dpi: 150,
             compressImages: true,
             flattenTransparency: true,
@@ -71,7 +69,6 @@ struct CompressionDialog: View {
             removeThumbnails: true,
             compressFonts: true,
             downsampleImages: true,
-            imageDPI: 72,
             dpi: 72,
             compressImages: true,
             flattenTransparency: true,
@@ -88,7 +85,6 @@ struct CompressionDialog: View {
             removeThumbnails: false,
             compressFonts: true,
             downsampleImages: false,
-            imageDPI: 300,
             dpi: 300,
             compressImages: true,
             flattenTransparency: true,
@@ -105,7 +101,6 @@ struct CompressionDialog: View {
             removeThumbnails: true,
             compressFonts: true,
             downsampleImages: true,
-            imageDPI: 72,
             dpi: 72,
             compressImages: true,
             flattenTransparency: true,
@@ -271,7 +266,7 @@ struct CompressionDialog: View {
         }
         .padding()
         .frame(width: 400, height: 580)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(DS.Colors.controlBackground)
         .onAppear {
             // Initialize with current settings
             loadCurrentSettings()
@@ -306,7 +301,6 @@ struct CompressionDialog: View {
             removeThumbnails: false,
             compressFonts: true,
             downsampleImages: downsampleImages,
-            imageDPI: customDPI,
             dpi: customDPI,
             compressImages: compressImages,
             flattenTransparency: flattenTransparency,

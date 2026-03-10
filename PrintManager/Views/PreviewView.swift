@@ -38,10 +38,10 @@ struct PreviewView: View {
                 }
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
-            
+            .background(DS.Colors.controlBackground)
+
             Divider()
-            
+
             if let file = selectedFile {
                 // Preview content
                 ScrollView {
@@ -84,17 +84,17 @@ struct PreviewView: View {
                 }
             } else {
                 // No selection
-                VStack(spacing: 16) {
-                    Image(systemName: "doc.questionmark")
-                        .font(.system(size: 48))
+                VStack(spacing: DS.Spacing.large) {
+                    Image(systemName: "questionmark.circle")
+                        .font(DS.Typography.largeIcon)
                         .foregroundColor(.secondary)
-                    
+
                     Text("No File Selected")
-                        .font(.headline)
+                        .font(DS.Typography.headline)
                         .foregroundColor(.secondary)
-                    
+
                     Text("Select a file to see its preview and details")
-                        .font(.caption)
+                        .font(DS.Typography.caption)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -113,6 +113,7 @@ struct PreviewImageView: View {
     let file: FileItem
     @Binding var currentPage: Int
     @State private var previewImage: NSImage?
+    @EnvironmentObject var appState: AppState
     
     var body: some View {
         Group {
@@ -120,13 +121,20 @@ struct PreviewImageView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onTapGesture(count: 2) {
+                        QuickLookController.shared.present(appState: appState)
+                    }
+                    .contextMenu {
+                        previewContextMenu(image: image)
+                    }
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: 300)
             }
         }
         .background(Color(NSColor.textBackgroundColor))
-        .cornerRadius(8)
+        .cornerRadius(DS.Radius.medium)
         .onAppear {
             loadPreview()
         }
@@ -139,29 +147,40 @@ struct PreviewImageView: View {
     }
     
     private func loadPreview() {
-        Task {
-            let image = await generatePreview()
-            await MainActor.run {
-                previewImage = image
-            }
+        Task { @MainActor in
+            let image = await generatePreview(file: file)
+            previewImage = image
         }
     }
-    
-    private func generatePreview() async -> NSImage? {
+
+    // MARK: - Context Menu
+
+    @ViewBuilder
+    private func previewContextMenu(image: NSImage) -> some View {
+        PreviewContextMenu(file: file, image: image)
+    }
+
+    private func generatePreview(file: FileItem) async -> NSImage? {
         if file.fileType == .pdf {
-            return generatePDFPreview()
+            return await generatePDFPreview(file: file)
         } else if file.fileType.isImage {
             return NSImage(contentsOf: file.url)
         }
         return nil
     }
-    
-    private func generatePDFPreview() -> NSImage? {
-        guard let pdfDocument = PDFDocument(url: file.url),
-              let page = pdfDocument.page(at: currentPage) else {
-            return nil
+
+    private func generatePDFPreview(file: FileItem) async -> NSImage? {
+        let key = file.url as NSURL
+        // Použij cached PDFDocument pokud existuje, jinak načti a ulož
+        let doc: PDFDocument
+        if let cached = appState.pdfDocumentCache.object(forKey: key) {
+            doc = cached
+        } else {
+            guard let loaded = PDFDocument(url: file.url) else { return nil }
+            appState.pdfDocumentCache.setObject(loaded, forKey: key)
+            doc = loaded
         }
-        
+        guard let page = doc.page(at: currentPage) else { return nil }
         return page.thumbnail(of: CGSize(width: 600, height: 800), for: .mediaBox)
     }
 }
@@ -192,8 +211,8 @@ struct FileInfoView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
+        .background(DS.Colors.controlBackground)
+        .cornerRadius(DS.Radius.medium)
     }
     
     private func getDetailedFileInfo(url: URL) -> String? {
@@ -224,20 +243,106 @@ struct FileInfoView: View {
     }
 }
 
-struct InfoRow: View {
-    let label: String
-    let value: String
-    
+// MARK: - Shared Preview Context Menu
+
+/// Kontextové menu pro náhled souboru — sdílené mezi PreviewImageView a SinglePagePreview.
+/// Přidává `@EnvironmentObject var appState: AppState` interně, takže stačí vložit do `.contextMenu { }`.
+struct PreviewContextMenu: View {
+    let file: FileItem
+    let image: NSImage
+    @EnvironmentObject var appState: AppState
+
+    private var isPDF: Bool { file.fileType == .pdf }
+
     var body: some View {
-        HStack {
-            Text(label + ":")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(width: 80, alignment: .leading)
-            
-            Text(value)
-                .font(.caption)
-                .bold()
+        // ── Finder / otevřít ─────────────────────────────────
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([file.url])
+        } label: {
+            Label("Zobrazit ve Finderu", systemImage: "folder")
+        }
+
+        Button {
+            NSWorkspace.shared.open(file.url)
+        } label: {
+            Label("Otevřít v externím programu", systemImage: "arrow.up.right.square")
+        }
+
+        Divider()
+
+        // ── Kopírovat do schránky ─────────────────────────────
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([image])
+        } label: {
+            Label(isPDF ? "Kopírovat stránku jako obrázek" : "Kopírovat obrázek",
+                  systemImage: "doc.on.doc")
+        }
+
+        Divider()
+
+        // ── PDF-only operace ──────────────────────────────────
+        if isPDF {
+            Button { appState.mergePDFs() } label: {
+                Label("Sloučit PDF", systemImage: "arrow.triangle.merge")
+            }
+            Button { appState.splitPDF() } label: {
+                Label("Rozdělit PDF", systemImage: "scissors")
+            }
+            Button { appState.tilePDFAction() } label: {
+                Label("Tile PDF…", systemImage: "rectangle.split.2x1")
+            }
+
+            Divider()
+
+            Button { appState.compressPDF() } label: {
+                Label("Komprimovat PDF…", systemImage: "arrow.down.circle")
+            }
+            Button { appState.rasterizePDF() } label: {
+                Label("Rasterizovat PDF", systemImage: "photo")
+            }
+
+            Divider()
+        }
+
+        // ── Operace společné pro obrázky i PDF ───────────────
+        Button { appState.expandFileAction() } label: {
+            Label("Expand (Bleed)…", systemImage: "arrow.up.left.and.arrow.down.right")
+        }
+        Button { appState.convertToGray() } label: {
+            Label("Převést na odstíny šedé", systemImage: "circle.lefthalf.filled")
+        }
+
+        // ── Ořez pro obrázky ─────────────────────────────────
+        if !isPDF {
+            Button {
+                appState.cropFile = file
+                appState.showCropView = true
+            } label: {
+                Label("Oříznout…", systemImage: "crop")
+            }
+        }
+
+        // ── Další PDF operace ─────────────────────────────────
+        if isPDF {
+            Button { appState.flattenTransparency() } label: {
+                Label("Zploštit průhlednost", systemImage: "square.stack")
+            }
+            Button { appState.fixPDF() } label: {
+                Label("Opravit PDF", systemImage: "wrench.and.screwdriver")
+            }
+
+            Divider()
+
+            Button { appState.printSelectedFiles() } label: {
+                Label("Tisknout…", systemImage: "printer")
+            }
+
+            Divider()
+
+            Button { appState.showPDFInfo() } label: {
+                Label("PDF Info…", systemImage: "info.circle")
+            }
         }
     }
 }
@@ -267,10 +372,10 @@ struct DebugOutputView: View {
                 .buttonStyle(.borderless)
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
-            
+            .background(DS.Colors.controlBackground)
+
             Divider()
-            
+
             // Debug messages
             ScrollViewReader { proxy in
                 ScrollView {

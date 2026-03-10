@@ -78,14 +78,45 @@ class PrintService {
             pi.isVerticallyCentered   = true
         }
 
-        // Kopie a oboustranný tisk přes PrintInfo slovník
         let dict = pi.dictionary()
+
+        // Kopie a oboustranný tisk — základní hodnoty
         dict.setValue(settings.copies, forKey: NSPrintInfo.AttributeKey.copies.rawValue)
         if settings.twoSided {
-            dict.setValue("two-sided-long-edge", forKey: "Duplex")
+            dict.setValue("two-sided-long-edge", forKey: "sides")
         }
 
+        // Preset options (CUPS/PPD volby z vybraného presetu)
+        // Formát: ["-o","key=value", "-o","key2=value2", "-n","2", ...]
+        // Tyto přepíší základní hodnoty pokud jsou v presetu definovány jinak.
+        applyLPOptions(settings.presetOptions, to: dict)
+
         return pi
+    }
+
+    /// Parsuje LP argumenty a aplikuje je do NSPrintInfo slovníku.
+    /// LP formát: ["-o", "sides=two-sided-long-edge", "-o", "ColorModel=Gray", "-n", "2"]
+    private func applyLPOptions(_ options: [String], to dict: NSMutableDictionary) {
+        var i = 0
+        while i < options.count {
+            switch options[i] {
+            case "-o" where i + 1 < options.count:
+                let kv = options[i + 1]
+                if let eq = kv.firstIndex(of: "=") {
+                    let key   = String(kv[kv.startIndex..<eq])
+                    let value = String(kv[kv.index(after: eq)...])
+                    dict.setValue(value, forKey: key)
+                }
+                i += 2
+            case "-n" where i + 1 < options.count:
+                if let n = Int(options[i + 1]) {
+                    dict.setValue(n, forKey: NSPrintInfo.AttributeKey.copies.rawValue)
+                }
+                i += 2
+            default:
+                i += 1
+            }
+        }
     }
 }
 
@@ -178,17 +209,20 @@ class PrintManager: ObservableObject {
 
     @discardableResult
     private func fetchAndApply() async -> Void {
-        let printers = getPrinters()
-        let def      = getDefaultPrinter()
-        let statuses: [String: PrinterStatus] = Dictionary(
-            uniqueKeysWithValues: printers.map { ($0, self.getPrinterStatus(for: $0)) }
-        )
-        let ips: [String: String] = Dictionary(
-            uniqueKeysWithValues: printers.compactMap { p -> (String, String)? in
-                guard let ip = self.extractPrinterIP(for: p) else { return nil }
-                return (p, ip)
-            }
-        )
+        // Všechny 4 lpstat volání běží paralelně
+        async let printersTask  = Task.detached(priority: .userInitiated) { self.getPrinters() }.value
+        async let defaultTask   = Task.detached(priority: .userInitiated) { self.getDefaultPrinter() }.value
+        async let allStatuses   = Task.detached(priority: .userInitiated) { self.getAllPrinterStatuses() }.value
+        async let allURIs       = Task.detached(priority: .userInitiated) { self.getAllDeviceURIs() }.value
+
+        let (printers, def, statusMap, uriMap) = await (printersTask, defaultTask, allStatuses, allURIs)
+
+        // Sestavit finální mapy jen pro tiskárny které lpstat -a vrátil
+        let statuses = Dictionary(uniqueKeysWithValues: printers.map {
+            ($0, statusMap[$0] ?? .idle)
+        })
+        let ips = uriMap.compactMapValues { extractHost(from: $0) }
+
         await MainActor.run {
             self.availablePrinters = printers
             self.defaultPrinter    = def
@@ -196,6 +230,69 @@ class PrintManager: ObservableObject {
             self.printerIPs        = ips
             self.saveToCache()
         }
+    }
+
+    /// Jeden lpstat -p (bez jména) → stavy všech tiskáren najednou.
+    private func getAllPrinterStatuses() -> [String: PrinterStatus] {
+        let output = runLpstat(args: ["-p"]) ?? ""
+        var result: [String: PrinterStatus] = [:]
+        for line in output.split(separator: "\n") {
+            let s = line.lowercased()
+            // "printer PrinterName is idle.  enabled since ..."
+            guard s.hasPrefix("printer ") else { continue }
+            let parts = line.split(separator: " ", maxSplits: 4)
+            guard parts.count >= 4 else { continue }
+            let name = String(parts[1])
+            let state = s
+            if state.contains("processing") || state.contains("printing") {
+                result[name] = .inUse
+            } else if state.contains("offline") || state.contains("disabled") {
+                result[name] = .offline
+            } else if state.contains("error") || state.contains("stopped") {
+                result[name] = .error("Error")
+            } else {
+                result[name] = .idle
+            }
+        }
+        return result
+    }
+
+    /// Jeden lpstat -v (bez jména) → URI všech tiskáren najednou.
+    private func getAllDeviceURIs() -> [String: String] {
+        let output = runLpstat(args: ["-v"]) ?? ""
+        var result: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            // "device for PrinterName: ipp://..."
+            guard line.hasPrefix("device for ") else { continue }
+            let rest = line.dropFirst("device for ".count)
+            guard let colon = rest.firstIndex(of: ":") else { continue }
+            let name = String(rest[rest.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
+            let uri  = String(rest[rest.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            result[name] = uri
+        }
+        return result
+    }
+
+    /// Extrahuje hostname/IP z URI tiskárny.
+    private func extractHost(from uri: String) -> String? {
+        guard let url = URL(string: uri), let host = url.host, !host.isEmpty else { return nil }
+        return host
+    }
+
+    /// Spustí lpstat s danými argumenty a vrátí stdout.
+    private func runLpstat(args: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/lpstat")
+        process.arguments = args
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError  = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)
+        } catch { return nil }
     }
 
     // MARK: - Persistence
@@ -226,62 +323,20 @@ class PrintManager: ObservableObject {
     }
     
     func getPrinters() -> [String] {
-        do {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/lpstat")
-            process.arguments = ["-a"]
-            
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            
-            try process.run()
-            process.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let output = String(data: data, encoding: .utf8) else {
-                return []
-            }
-            
-            let printers = output.split(separator: "\n").compactMap { line -> String? in
-                let components = line.split(separator: " ")
-                return components.first.map(String.init)
-            }
-            
-            return printers
-        } catch {
-            print("Error getting printers: \(error)")
-            return []
+        let output = runLpstat(args: ["-a"]) ?? ""
+        return output.split(separator: "\n").compactMap { line -> String? in
+            let name = String(line.split(separator: " ").first ?? "")
+            return name.isEmpty ? nil : name
         }
     }
-    
+
     func getDefaultPrinter() -> String? {
-        do {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/lpstat")
-            process.arguments = ["-d"]
-            
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            
-            try process.run()
-            process.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let output = String(data: data, encoding: .utf8) else {
-                return nil
-            }
-            
-            // Parse output: "system default destination: PrinterName"
-            let components = output.split(separator: ":")
-            if components.count > 1 {
-                return components[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            
-            return nil
-        } catch {
-            print("Error getting default printer: \(error)")
-            return nil
-        }
+        let output = runLpstat(args: ["-d"]) ?? ""
+        // "system default destination: PrinterName"
+        let parts = output.split(separator: ":", maxSplits: 1)
+        guard parts.count > 1 else { return nil }
+        let name = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
     
     func getPresetsForPrinter(_ printer: String) -> [String] {
@@ -320,36 +375,19 @@ class PrintManager: ObservableObject {
             
             return allPresets
         } catch {
+            #if DEBUG
             print("Error reading presets: \(error)")
+            #endif
             return []
         }
     }
     
     func getPrinterStatus(for printerName: String) -> PrinterStatus {
-        do {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/lpstat")
-            process.arguments = ["-p", printerName]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = Pipe()
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.lowercased() ?? ""
-            if output.contains("processing") || output.contains("printing") {
-                return .inUse
-            } else if output.contains("offline") || output.contains("disabled") {
-                return .offline
-            } else if output.contains("idle") {
-                return .idle
-            } else if output.contains("error") || output.contains("stopped") {
-                return .error("Error")
-            }
-            return .idle
-        } catch {
-            return .idle
-        }
+        let output = (runLpstat(args: ["-p", printerName]) ?? "").lowercased()
+        if output.contains("processing") || output.contains("printing") { return .inUse }
+        if output.contains("offline")    || output.contains("disabled")  { return .offline }
+        if output.contains("error")      || output.contains("stopped")   { return .error("Error") }
+        return .idle
     }
 
     func isCUPSRunning() -> Bool {
@@ -417,62 +455,34 @@ class PrintManager: ObservableObject {
             symbolName = "printer.fill"; color = .systemBlue
         }
         let config = NSImage.SymbolConfiguration(paletteColors: [color])
-        return NSImage(systemSymbolName: symbolName, accessibilityDescription: printerName)?
-            .withSymbolConfiguration(config)
-            ?? NSImage(systemSymbolName: "printer.fill", accessibilityDescription: nil)!
+        if let icon = NSImage(systemSymbolName: symbolName, accessibilityDescription: printerName)?
+            .withSymbolConfiguration(config) {
+            return icon
+        }
+        return NSImage(systemSymbolName: "printer.fill", accessibilityDescription: nil)
+            ?? NSImage(size: NSSize(width: 16, height: 16))
     }
 
     /// Returns the raw device URI string from lpstat -v for a given printer.
     private func getDeviceURI(for printerName: String) -> String? {
-        do {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/lpstat")
-            process.arguments = ["-v", printerName]
-
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-
-            try process.run()
-            process.waitUntilExit()
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
-        } catch {
-            return nil
-        }
+        runLpstat(args: ["-v", printerName])
     }
     
     /// Opens the CUPS web interface for a specific printer
     func openCUPSPage(for printerName: String) {
         // CUPS web interface URL for specific printer
         let encodedName = printerName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? printerName
-        let cupsURL = URL(string: "http://localhost:631/printers/\(encodedName)")!
-        
+        guard let cupsURL = URL(string: "http://localhost:631/printers/\(encodedName)") else { return }
         NSWorkspace.shared.open(cupsURL)
     }
     
     /// Opens the main CUPS web interface
     func openCUPSMainPage() {
-        let cupsURL = URL(string: "http://localhost:631/")!
+        guard let cupsURL = URL(string: "http://localhost:631/") else { return }
         NSWorkspace.shared.open(cupsURL)
     }
 
-    /// Extracts IP address or hostname from printer's device URI
-    private func extractPrinterIP(for printerName: String) -> String? {
-        guard let output = getDeviceURI(for: printerName) else { return nil }
-        // lpstat -v output: "device for PrinterName: ipp://192.168.1.100/ipp/print"
-        guard let colonRange = output.range(of: ": "),
-              let rawURI = String(output[colonRange.upperBound...])
-                .components(separatedBy: "\n").first?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              let url = URL(string: rawURI),
-              let host = url.host,
-              !host.isEmpty else { return nil }
-        return host
-    }
-
-    /// Opens the print queue app from ~/Library/Printers/<name>.app
+/// Opens the print queue app from ~/Library/Printers/<name>.app
     func openPrintQueue(for printerName: String) {
         let printerApp = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Printers/\(printerName).app")

@@ -134,60 +134,42 @@ class PageColorAnalyzer {
     private func parseOutput(_ output: String) -> PageColorInfo {
         var colorPages: [Int] = []
         var blackWhitePages: [Int] = []
-        
+        var pageCounter = 0   // inkrementuje se pro každý platný CMYK řádek
+
         let lines = output.components(separatedBy: .newlines)
-        
-        for (index, line) in lines.enumerated() {
-            let fields = line.trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces)
+
+        for line in lines {
+            let fields = line.trimmingCharacters(in: .whitespaces)
+                .components(separatedBy: .whitespaces)
                 .filter { !$0.isEmpty }
-            
-            // Need at least 4 CMYK values
+
+            // Potřebujeme alespoň 4 CMYK hodnoty
             guard fields.count >= 4 else { continue }
-            
-            // Check if all 4 fields are valid floats between 0 and 1
+
+            // Každé pole musí být float v rozsahu 0–1
             let validCMYK = fields.prefix(4).allSatisfy { field in
-                if let value = Double(field) {
-                    return value >= 0 && value <= 1
-                }
+                if let v = Double(field) { return v >= 0 && v <= 1 }
                 return false
             }
-            
             guard validCMYK else { continue }
-            
-            // Parse CMYK values
+
             guard let c = Double(fields[0]),
                   let m = Double(fields[1]),
-                  let y = Double(fields[2]),
-                  let k = Double(fields[3]) else { continue }
-            
-            let pageNumber = index + 1  // 1-indexed
+                  let y = Double(fields[2]) else { continue }
 
-            // Práh 0.01: DeviceGray objekty namapované přes inkcov mohou
-            // generovat nepatrné plovoucí CMY hodnoty (< 0.005) i u šedých stránek.
+            pageCounter += 1   // toto je číslo stránky (1-indexed)
+
+            // Práh 0.01: DeviceGray objekty přes inkcov mohou generovat
+            // nepatrné plovoucí CMY hodnoty (< 0.005) u šedých stránek.
             let colorThreshold = 0.01
             if c > colorThreshold || m > colorThreshold || y > colorThreshold {
-                colorPages.append(pageNumber)
+                colorPages.append(pageCounter)
             } else {
-                blackWhitePages.append(pageNumber)
+                blackWhitePages.append(pageCounter)
             }
         }
-        
-        // If we couldn't detect any pages, try to get page count from PDF
-        let totalPages = max(colorPages.count + blackWhitePages.count, 1)
-        
-        // If no pages detected, assume all are B&W (common for scanned documents)
-        if colorPages.isEmpty && blackWhitePages.isEmpty {
-            // Try to get page count another way
-            if let pdfPageCount = getPDFPageCount() {
-                blackWhitePages = Array(1...pdfPageCount)
-                return PageColorInfo(
-                    totalPages: pdfPageCount,
-                    colorPages: [],
-                    blackWhitePages: blackWhitePages
-                )
-            }
-        }
-        
+
+        let totalPages = max(pageCounter, 1)
         return PageColorInfo(
             totalPages: totalPages,
             colorPages: colorPages,
@@ -195,10 +177,6 @@ class PageColorAnalyzer {
         )
     }
     
-    private func getPDFPageCount() -> Int? {
-        // This is a fallback - in practice the PDF should already be parsed
-        return nil
-    }
 }
 
 enum PageColorAnalyzerError: LocalizedError {

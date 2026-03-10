@@ -31,7 +31,7 @@ struct PDFInfoView: View {
                 .buttonStyle(.borderless)
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(DS.Colors.controlBackground)
             
             Divider()
             
@@ -89,10 +89,10 @@ struct PDFInfoView: View {
                 .buttonStyle(.borderedProminent)
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(DS.Colors.controlBackground)
         }
         .frame(width: 450, height: 520)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(DS.Colors.windowBackground)
     }
     
     private func copyToClipboard() {
@@ -141,8 +141,8 @@ struct InfoSection<Content: View>: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .background(DS.Colors.controlBackground)
+            .cornerRadius(DS.Radius.medium)
         }
     }
 }

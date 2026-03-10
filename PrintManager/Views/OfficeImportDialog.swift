@@ -54,7 +54,7 @@ struct OfficeImportDialog: View {
                 }
                 .padding(10)
                 .background(Color.red.opacity(0.08))
-                .cornerRadius(8)
+                .cornerRadius(DS.Radius.medium)
             }
 
             // Google přihlášení — zobrazí se jen pokud je vybraná Google a není přihlášeno
@@ -80,7 +80,7 @@ struct OfficeImportDialog: View {
                 }
                 .padding(10)
                 .background(Color.orange.opacity(0.08))
-                .cornerRadius(8)
+                .cornerRadius(DS.Radius.medium)
             }
 
             Divider()
@@ -124,6 +124,9 @@ struct OfficeImportDialog: View {
             case .googleDrive:
                 Image(systemName: "g.circle.fill").foregroundColor(.blue)
                 Text("Nahraje soubor na Google Drive, exportuje jako PDF a smaže ho. Vyžaduje přihlášení.")
+            case .iLovePDF:
+                Image(systemName: "heart.circle.fill").foregroundColor(.pink)
+                Text("Použije iLovePDF API. Vyžaduje Public Key v Nastavení. Free tier: 250 requestů/měsíc.")
             }
         }
         .font(.caption)
@@ -134,7 +137,13 @@ struct OfficeImportDialog: View {
     // MARK: - Helpers
 
     private var importDisabled: Bool {
-        selectedMethod == .googleDrive && !googleAuth.isAuthenticated
+        if selectedMethod == .googleDrive && !googleAuth.isAuthenticated {
+            return true
+        }
+        if selectedMethod == .iLovePDF && !appState.iLovePDFConfigured {
+            return true
+        }
+        return false
     }
 
     private func badge(for method: ImportMethod) -> MethodBadge? {
@@ -143,6 +152,7 @@ struct OfficeImportDialog: View {
         case .openOffice:   return appState.openOfficeAvailable ? .init("Dostupný", .green) : .init("Nenalezen", .secondary)
         case .cloudConvert: return appState.cloudConvertConfigured ? .init("Nakonfig.", .green) : .init("Chybí klíč", .orange)
         case .googleDrive:  return googleAuth.isAuthenticated ? .init("Přihlášen", .green) : .init("Nepřihlášen", .orange)
+        case .iLovePDF:     return appState.iLovePDFConfigured ? .init("Nakonfig.", .green) : .init("Chybí klíč", .orange)
         }
     }
 
@@ -169,6 +179,8 @@ struct OfficeImportDialog: View {
             Task { await importWithCloudConvert(files: files) }
         case .googleDrive:
             Task { await importWithGoogleDrive(files: files) }
+        case .iLovePDF:
+            Task { await importWithILovePDF(files: files) }
         }
     }
 
@@ -184,7 +196,7 @@ struct OfficeImportDialog: View {
             do {
                 let pdfURL = try await service.convertToPDF(url: url)
                 await MainActor.run {
-                    appState.addFiles(urls: [pdfURL])
+                    appState.addFiles(urls: [pdfURL], autoSelect: true)
                     appState.logSuccess("Hotovo: \(pdfURL.lastPathComponent)")
                 }
             } catch {
@@ -194,7 +206,7 @@ struct OfficeImportDialog: View {
     }
 
     private func importWithCloudConvert(files: [URL]) async {
-        let apiKey = UserDefaults.standard.string(forKey: "cloudConvertApiKey") ?? ""
+        let apiKey = UserDefaults.standard.string(forKey: UDKeys.cloudConvertApiKey) ?? ""
         guard !apiKey.isEmpty else {
             await MainActor.run { appState.logError("CloudConvert API klíč není nastaven. Nastavte v Nastavení → CloudConvert.") }
             return
@@ -206,7 +218,7 @@ struct OfficeImportDialog: View {
             do {
                 let pdfURL = try await service.convertToPDF(fileURL: url)
                 await MainActor.run {
-                    appState.addFiles(urls: [pdfURL])
+                    appState.addFiles(urls: [pdfURL], autoSelect: true)
                     appState.logSuccess("Hotovo: \(pdfURL.lastPathComponent)")
                 }
             } catch {
@@ -223,11 +235,34 @@ struct OfficeImportDialog: View {
             do {
                 let pdfURL = try await service.convertToPDF(fileURL: url)
                 await MainActor.run {
-                    appState.addFiles(urls: [pdfURL])
+                    appState.addFiles(urls: [pdfURL], autoSelect: true)
                     appState.logSuccess("Hotovo: \(pdfURL.lastPathComponent)")
                 }
             } catch {
                 await MainActor.run { appState.logError("Chyba (\(url.lastPathComponent)): \(error.localizedDescription)") }
+            }
+        }
+    }
+
+    private func importWithILovePDF(files: [URL]) async {
+        let publicKey = UserDefaults.standard.string(forKey: UDKeys.iLovePDFPublicKey) ?? ""
+        guard !publicKey.isEmpty else {
+            await MainActor.run { appState.logError("iLovePDF Public Key není nastaven. Nastavte v Nastavení → iLovePDF.") }
+            return
+        }
+        // Secret key is not needed for API - only for webhooks
+        let service = ILovePDFWebService(publicKey: publicKey, secretKey: "")
+        await MainActor.run { appState.logInfo("Import \(files.count) souborů přes iLovePDF...") }
+        for url in files {
+            await MainActor.run { appState.logInfo("Nahrávám na iLovePDF: \(url.lastPathComponent)") }
+            do {
+                let pdfURL = try await service.convertOfficeToPDF(fileURL: url)
+                await MainActor.run {
+                    appState.addFiles(urls: [pdfURL], autoSelect: true)
+                    appState.logSuccess("Hotovo: \(pdfURL.lastPathComponent)")
+                }
+            } catch {
+                await MainActor.run { appState.logError("iLovePDF chyba (\(url.lastPathComponent)): \(error.localizedDescription)") }
             }
         }
     }
@@ -294,14 +329,14 @@ struct MethodOptionRow: View {
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(badge.color.opacity(0.12))
-                        .cornerRadius(5)
+                        .cornerRadius(DS.Radius.small)
                 }
             }
-            .padding(12)
+            .padding(DS.Spacing.medium)
             .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
-            .cornerRadius(8)
+            .cornerRadius(DS.Radius.medium)
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: DS.Radius.medium)
                     .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
             )
         }
@@ -314,6 +349,7 @@ struct MethodOptionRow: View {
         case .openOffice:   return .orange
         case .cloudConvert: return .purple
         case .googleDrive:  return .blue
+        case .iLovePDF:     return .pink
         }
     }
 }
@@ -325,7 +361,11 @@ extension AppState {
         OfficeConversionService().isAvailable
     }
     var cloudConvertConfigured: Bool {
-        !(UserDefaults.standard.string(forKey: "cloudConvertApiKey") ?? "").isEmpty
+        !(UserDefaults.standard.string(forKey: UDKeys.cloudConvertApiKey) ?? "").isEmpty
+    }
+    var iLovePDFConfigured: Bool {
+        let publicKey = UserDefaults.standard.string(forKey: UDKeys.iLovePDFPublicKey) ?? ""
+        return !publicKey.isEmpty
     }
 }
 

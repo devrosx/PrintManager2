@@ -29,9 +29,11 @@ class NotificationManager: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             Task { @MainActor in
                 self.isAuthorized = granted
+                #if DEBUG
                 if let error = error {
                     print("Notification authorization error: \(error.localizedDescription)")
                 }
+                #endif
             }
         }
     }
@@ -44,15 +46,8 @@ class NotificationManager: ObservableObject {
         actionIdentifier: String? = nil
     ) {
         // Check if notifications are enabled in settings
-        guard isNotificationsEnabled else {
-            print("Notifications disabled in settings")
-            return
-        }
-        
-        guard isAuthorized else {
-            print("Notifications not authorized")
-            return
-        }
+        guard isNotificationsEnabled else { return }
+        guard isAuthorized else { return }
         
         let content = UNMutableNotificationContent()
         content.title = title
@@ -65,11 +60,7 @@ class NotificationManager: ObservableObject {
             trigger: nil
         )
         
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Failed to send notification: \(error.localizedDescription)")
-            }
-        }
+        UNUserNotificationCenter.current().add(request)
     }
     
     // Convenience methods for common notifications

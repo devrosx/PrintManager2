@@ -7,13 +7,29 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04587BA72F4B9BAF00491DC2 /* InlineQuickLookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04587BA62F4B9BAF00491DC2 /* InlineQuickLookView.swift */; };
+		3677832BFC0B1071980E0D98 /* ExpandDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 193D06088ABADC593E61F620 /* ExpandDialog.swift */; };
+		378CC647FBA5ADA4D128EAF9 /* ImpositionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4541B66095B2272ACC1374A0 /* ImpositionModels.swift */; };
+		4248E923E44DAD9555304111 /* InDesignService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F607EE1E801B5B0DEAA61D23 /* InDesignService.swift */; };
+		57ADEB0CC3AA02FC41A14A23 /* ILovePDFWebService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBBD6203382C06A535533FD /* ILovePDFWebService.swift */; };
+		6F634DE34D9D5050A68B3B9F /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377A33C0DA9625492F1FE7E3 /* ThumbnailCache.swift */; };
+		7F36FC30D0D32CB6416AB3C4 /* ImpositionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F82DA275EB69C953309AAAC /* ImpositionService.swift */; };
+		B0B6B0A53D05F000A805ABA5 /* ImpositionDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD0D25C4DFA9EA5E34F33D3 /* ImpositionDialog.swift */; };
+		B702A4235339AE799486CC6E /* TilePDFService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B378C44EBDFC39E2397BD6 /* TilePDFService.swift */; };
+		B80124C41A32D58E0DC3621B /* InDesignImportDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27EFE42D3FEDDB673CFEF51F /* InDesignImportDialog.swift */; };
+		CB2C5DA56102C2C595B50EC7 /* ExpandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051D70FBD8DCB8192A955A6F /* ExpandService.swift */; };
+		EXTN000001 /* PDFPage+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXTNFILE01 /* PDFPage+Compression.swift */; };
+		FBDB45B05CCA40CE1A84800C /* TilePDFDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC20C9D562BE40DEB4E1E01D /* TilePDFDialog.swift */; };
 		MAIN000001 /* PrintManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINFILE01 /* PrintManagerApp.swift */; };
 		MAIN000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = MAINFILE02 /* Assets.xcassets */; };
+		LOC000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = LOC000003 /* Localizable.strings */; };
 		MODEL00001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE1 /* AppState.swift */; };
 		MODEL00002 /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE2 /* FileItem.swift */; };
 		MODEL00003 /* CompressionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE3 /* CompressionModels.swift */; };
 		MODEL00004 /* CompressionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE4 /* CompressionSettings.swift */; };
 		MODEL00005 /* PrinterPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE5 /* PrinterPreset.swift */; };
+		MODEL00006 /* DrawingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE6 /* DrawingsModels.swift */; };
+		SCPT000001 /* multicrop_cv2.py in Resources */ = {isa = PBXBuildFile; fileRef = SCPTFILE01 /* multicrop_cv2.py */; };
 		SERV000001 /* PrintService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE01 /* PrintService.swift */; };
 		SERV000002 /* PDFService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE02 /* PDFService.swift */; };
 		SERV000003 /* ImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE03 /* ImageService.swift */; };
@@ -30,7 +46,12 @@
 		SERV000014 /* SystemPresetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE14 /* SystemPresetService.swift */; };
 		SERV000015 /* MultiCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE15 /* MultiCropService.swift */; };
 		SERV000016 /* DrawingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE16 /* DrawingsService.swift */; };
+		SERV000017 /* PDFRenderingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE17 /* PDFRenderingService.swift */; };
+		SERV000018 /* ImageLoadingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE18 /* ImageLoadingService.swift */; };
+		SERV000019 /* MultiCropCV2Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE19 /* MultiCropCV2Service.swift */; };
 		UTIL000001 /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = UTILFILE01 /* Utilities.swift */; };
+		UTIL000002 /* RenderingConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = UTILFILE02 /* RenderingConstants.swift */; };
+		UTIL000003 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = UTILFILE03 /* DesignSystem.swift */; };
 		VIEW000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE01 /* ContentView.swift */; };
 		VIEW000002 /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE02 /* PreviewView.swift */; };
 		VIEW000003 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE03 /* SettingsView.swift */; };
@@ -45,18 +66,51 @@
 		VIEW000012 /* BatchRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE12 /* BatchRenameView.swift */; };
 		VIEW000013 /* DrawingsDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE13 /* DrawingsDialog.swift */; };
 		VIEW000014 /* QuickLookPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE14 /* QuickLookPanel.swift */; };
-		EXTN000001 /* PDFPage+Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXTNFILE01 /* PDFPage+Compression.swift */; };
+		VIEW000015 /* SharedUIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE15 /* SharedUIComponents.swift */; };
+		VMDL000001 /* DrawingsDialogViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = VMDLFILE01 /* DrawingsDialogViewModel.swift */; };
+		SERV000020 /* StitchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE20 /* StitchService.swift */; };
+		MODEL00007 /* StitchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELFILE7 /* StitchModels.swift */; };
+		VIEW000016 /* StitchDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE16 /* StitchDialog.swift */; };
+		SERV000021 /* WatermarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE21 /* WatermarkService.swift */; };
+		SERV000022 /* NativeStitchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE22 /* NativeStitchService.swift */; };
+		VIEW000017 /* WatermarkDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE17 /* WatermarkDialog.swift */; };
+		SERV000023 /* ImageAdjustService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE23 /* ImageAdjustService.swift */; };
+		VIEW000018 /* ImageAdjustDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWFILE18 /* ImageAdjustDialog.swift */; };
+		SERV000024 /* BackgroundRemovalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVFILE24 /* BackgroundRemovalService.swift */; };
+		SERVFILE25 /* ResizeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERV000025 /* ResizeService.swift */; };
+		VIEWFILE19 /* ResizeDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEW000019 /* ResizeDialog.swift */; };
+		MODELFILE8 /* GalleryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELREF08 /* GalleryModels.swift */; };
+		SERVFILE26 /* GalleryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF026 /* GalleryService.swift */; };
+		SERVFILE27 /* GalleryInDesignService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF027 /* GalleryInDesignService.swift */; };
+		VIEWFILE20 /* GalleryDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWREF020 /* GalleryDialog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		04587BA62F4B9BAF00491DC2 /* InlineQuickLookView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InlineQuickLookView.swift; sourceTree = "<group>"; };
+		051D70FBD8DCB8192A955A6F /* ExpandService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExpandService.swift; sourceTree = "<group>"; };
+		193D06088ABADC593E61F620 /* ExpandDialog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExpandDialog.swift; sourceTree = "<group>"; };
+		27EFE42D3FEDDB673CFEF51F /* InDesignImportDialog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InDesignImportDialog.swift; sourceTree = "<group>"; };
+		377A33C0DA9625492F1FE7E3 /* ThumbnailCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
+		40B378C44EBDFC39E2397BD6 /* TilePDFService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TilePDFService.swift; sourceTree = "<group>"; };
+		4541B66095B2272ACC1374A0 /* ImpositionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImpositionModels.swift; sourceTree = "<group>"; };
+		4F82DA275EB69C953309AAAC /* ImpositionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImpositionService.swift; sourceTree = "<group>"; };
+		6EBBD6203382C06A535533FD /* ILovePDFWebService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ILovePDFWebService.swift; sourceTree = "<group>"; };
+		DC20C9D562BE40DEB4E1E01D /* TilePDFDialog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TilePDFDialog.swift; sourceTree = "<group>"; };
+		ECD0D25C4DFA9EA5E34F33D3 /* ImpositionDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImpositionDialog.swift; sourceTree = "<group>"; };
+		EXTNFILE01 /* PDFPage+Compression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PDFPage+Compression.swift"; sourceTree = "<group>"; };
+		F607EE1E801B5B0DEAA61D23 /* InDesignService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InDesignService.swift; sourceTree = "<group>"; };
+		LOC000004 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		LOC000005 /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = cs.lproj/Localizable.strings; sourceTree = "<group>"; };
 		MAINFILE01 /* PrintManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintManagerApp.swift; sourceTree = "<group>"; };
 		MAINFILE02 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		MAINFILE03 /* .app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = .app; sourceTree = BUILT_PRODUCTS_DIR; };
+		MAINFILE03 /* .app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = .app; path = PrintManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		MODELFILE1 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		MODELFILE2 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
 		MODELFILE3 /* CompressionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionModels.swift; sourceTree = "<group>"; };
 		MODELFILE4 /* CompressionSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionSettings.swift; sourceTree = "<group>"; };
 		MODELFILE5 /* PrinterPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrinterPreset.swift; sourceTree = "<group>"; };
+		MODELFILE6 /* DrawingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingsModels.swift; sourceTree = "<group>"; };
+		SCPTFILE01 /* multicrop_cv2.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = multicrop_cv2.py; sourceTree = "<group>"; };
 		SERVFILE01 /* PrintService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintService.swift; sourceTree = "<group>"; };
 		SERVFILE02 /* PDFService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFService.swift; sourceTree = "<group>"; };
 		SERVFILE03 /* ImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageService.swift; sourceTree = "<group>"; };
@@ -73,7 +127,12 @@
 		SERVFILE14 /* SystemPresetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPresetService.swift; sourceTree = "<group>"; };
 		SERVFILE15 /* MultiCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiCropService.swift; sourceTree = "<group>"; };
 		SERVFILE16 /* DrawingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingsService.swift; sourceTree = "<group>"; };
+		SERVFILE17 /* PDFRenderingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFRenderingService.swift; sourceTree = "<group>"; };
+		SERVFILE18 /* ImageLoadingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoadingService.swift; sourceTree = "<group>"; };
+		SERVFILE19 /* MultiCropCV2Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiCropCV2Service.swift; sourceTree = "<group>"; };
 		UTILFILE01 /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
+		UTILFILE02 /* RenderingConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderingConstants.swift; sourceTree = "<group>"; };
+		UTILFILE03 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		VIEWFILE01 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		VIEWFILE02 /* PreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewView.swift; sourceTree = "<group>"; };
 		VIEWFILE03 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -88,7 +147,23 @@
 		VIEWFILE12 /* BatchRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameView.swift; sourceTree = "<group>"; };
 		VIEWFILE13 /* DrawingsDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingsDialog.swift; sourceTree = "<group>"; };
 		VIEWFILE14 /* QuickLookPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookPanel.swift; sourceTree = "<group>"; };
-		EXTNFILE01 /* PDFPage+Compression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PDFPage+Compression.swift"; sourceTree = "<group>"; };
+		VIEWFILE15 /* SharedUIComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedUIComponents.swift; sourceTree = "<group>"; };
+		VMDLFILE01 /* DrawingsDialogViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingsDialogViewModel.swift; sourceTree = "<group>"; };
+		SERVFILE20 /* StitchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StitchService.swift; sourceTree = "<group>"; };
+		MODELFILE7 /* StitchModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StitchModels.swift; sourceTree = "<group>"; };
+		VIEWFILE16 /* StitchDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StitchDialog.swift; sourceTree = "<group>"; };
+		SERVFILE21 /* WatermarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkService.swift; sourceTree = "<group>"; };
+		SERVFILE22 /* NativeStitchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeStitchService.swift; sourceTree = "<group>"; };
+		VIEWFILE17 /* WatermarkDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkDialog.swift; sourceTree = "<group>"; };
+		SERVFILE23 /* ImageAdjustService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAdjustService.swift; sourceTree = "<group>"; };
+		SERVFILE24 /* BackgroundRemovalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRemovalService.swift; sourceTree = "<group>"; };
+		VIEWFILE18 /* ImageAdjustDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAdjustDialog.swift; sourceTree = "<group>"; };
+		SERV000025 /* ResizeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeService.swift; sourceTree = "<group>"; };
+		VIEW000019 /* ResizeDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeDialog.swift; sourceTree = "<group>"; };
+		MODELREF08 /* GalleryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryModels.swift; sourceTree = "<group>"; };
+		SERVREF026 /* GalleryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryService.swift; sourceTree = "<group>"; };
+		SERVREF027 /* GalleryInDesignService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryInDesignService.swift; sourceTree = "<group>"; };
+		VIEWREF020 /* GalleryDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryDialog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,16 +177,27 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		EXTNGROUP1 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				EXTNFILE01 /* PDFPage+Compression.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
 		MAINGROUP1 /* PrintManager */ = {
 			isa = PBXGroup;
 			children = (
 				MAINFILE01 /* PrintManagerApp.swift */,
 				MODELGROUP /* Models */,
 				VIEWSGROUP /* Views */,
+				VMDLGROUP1 /* ViewModels */,
 				SERVSGROUP /* Services */,
 				EXTNGROUP1 /* Extensions */,
 				UTILGROUP1 /* Utilities */,
+				SCPTGROUP1 /* Scripts */,
 				MAINFILE02 /* Assets.xcassets */,
+				LOC000003 /* Localizable.strings */,
 			);
 			path = PrintManager;
 			sourceTree = "<group>";
@@ -124,6 +210,10 @@
 				MODELFILE3 /* CompressionModels.swift */,
 				MODELFILE4 /* CompressionSettings.swift */,
 				MODELFILE5 /* PrinterPreset.swift */,
+				MODELFILE6 /* DrawingsModels.swift */,
+				4541B66095B2272ACC1374A0 /* ImpositionModels.swift */,
+				MODELFILE7 /* StitchModels.swift */,
+				MODELREF08 /* GalleryModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -142,6 +232,14 @@
 				MAINGROUP1 /* PrintManager */,
 				PRODGROUP1 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		SCPTGROUP1 /* Scripts */ = {
+			isa = PBXGroup;
+			children = (
+				SCPTFILE01 /* multicrop_cv2.py */,
+			);
+			path = Scripts;
 			sourceTree = "<group>";
 		};
 		SERVSGROUP /* Services */ = {
@@ -163,22 +261,33 @@
 				SERVFILE14 /* SystemPresetService.swift */,
 				SERVFILE15 /* MultiCropService.swift */,
 				SERVFILE16 /* DrawingsService.swift */,
+				SERVFILE17 /* PDFRenderingService.swift */,
+				SERVFILE18 /* ImageLoadingService.swift */,
+				6EBBD6203382C06A535533FD /* ILovePDFWebService.swift */,
+				SERVFILE19 /* MultiCropCV2Service.swift */,
+				4F82DA275EB69C953309AAAC /* ImpositionService.swift */,
+				051D70FBD8DCB8192A955A6F /* ExpandService.swift */,
+				377A33C0DA9625492F1FE7E3 /* ThumbnailCache.swift */,
+				40B378C44EBDFC39E2397BD6 /* TilePDFService.swift */,
+				F607EE1E801B5B0DEAA61D23 /* InDesignService.swift */,
+				SERVFILE20 /* StitchService.swift */,
+				SERVFILE21 /* WatermarkService.swift */,
+				SERVFILE22 /* NativeStitchService.swift */,
+				SERVFILE23 /* ImageAdjustService.swift */,
+				SERVFILE24 /* BackgroundRemovalService.swift */,
+				SERV000025 /* ResizeService.swift */,
+				SERVREF026 /* GalleryService.swift */,
+				SERVREF027 /* GalleryInDesignService.swift */,
 			);
 			path = Services;
-			sourceTree = "<group>";
-		};
-		EXTNGROUP1 /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				EXTNFILE01 /* PDFPage+Compression.swift */,
-			);
-			path = Extensions;
 			sourceTree = "<group>";
 		};
 		UTILGROUP1 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
 				UTILFILE01 /* Utilities.swift */,
+				UTILFILE02 /* RenderingConstants.swift */,
+				UTILFILE03 /* DesignSystem.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -186,6 +295,7 @@
 		VIEWSGROUP /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				04587BA62F4B9BAF00491DC2 /* InlineQuickLookView.swift */,
 				VIEWFILE01 /* ContentView.swift */,
 				VIEWFILE02 /* PreviewView.swift */,
 				VIEWFILE03 /* SettingsView.swift */,
@@ -200,11 +310,41 @@
 				VIEWFILE12 /* BatchRenameView.swift */,
 				VIEWFILE13 /* DrawingsDialog.swift */,
 				VIEWFILE14 /* QuickLookPanel.swift */,
+				VIEWFILE15 /* SharedUIComponents.swift */,
+				ECD0D25C4DFA9EA5E34F33D3 /* ImpositionDialog.swift */,
+				193D06088ABADC593E61F620 /* ExpandDialog.swift */,
+				DC20C9D562BE40DEB4E1E01D /* TilePDFDialog.swift */,
+				27EFE42D3FEDDB673CFEF51F /* InDesignImportDialog.swift */,
+				VIEWFILE16 /* StitchDialog.swift */,
+				VIEWFILE17 /* WatermarkDialog.swift */,
+				VIEWFILE18 /* ImageAdjustDialog.swift */,
+				VIEW000019 /* ResizeDialog.swift */,
+				VIEWREF020 /* GalleryDialog.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
+		VMDLGROUP1 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				VMDLFILE01 /* DrawingsDialogViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
+
+/* Begin PBXVariantGroup section */
+		LOC000003 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				LOC000005 /* cs */,
+				LOC000004 /* en */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXNativeTarget section */
 		MAINTARGET /* PrintManager */ = {
@@ -236,9 +376,10 @@
 			};
 			buildConfigurationList = BUILDCONF2 /* Build configuration list for PBXProject "PrintManager" */;
 			compatibilityVersion = "Xcode 13.0";
-			developmentRegion = en;
+			developmentRegion = cs;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				cs,
 				en,
 				Base,
 			);
@@ -258,6 +399,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				MAIN000002 /* Assets.xcassets in Resources */,
+				SCPT000001 /* multicrop_cv2.py in Resources */,
+				LOC000001 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -274,6 +417,7 @@
 				MODEL00003 /* CompressionModels.swift in Sources */,
 				MODEL00004 /* CompressionSettings.swift in Sources */,
 				MODEL00005 /* PrinterPreset.swift in Sources */,
+				MODEL00006 /* DrawingsModels.swift in Sources */,
 				VIEW000001 /* ContentView.swift in Sources */,
 				VIEW000002 /* PreviewView.swift in Sources */,
 				VIEW000003 /* SettingsView.swift in Sources */,
@@ -288,6 +432,7 @@
 				VIEW000012 /* BatchRenameView.swift in Sources */,
 				VIEW000013 /* DrawingsDialog.swift in Sources */,
 				VIEW000014 /* QuickLookPanel.swift in Sources */,
+				VIEW000015 /* SharedUIComponents.swift in Sources */,
 				SERV000001 /* PrintService.swift in Sources */,
 				SERV000002 /* PDFService.swift in Sources */,
 				SERV000003 /* ImageService.swift in Sources */,
@@ -304,8 +449,41 @@
 				SERV000014 /* SystemPresetService.swift in Sources */,
 				SERV000015 /* MultiCropService.swift in Sources */,
 				SERV000016 /* DrawingsService.swift in Sources */,
+				04587BA72F4B9BAF00491DC2 /* InlineQuickLookView.swift in Sources */,
+				SERV000017 /* PDFRenderingService.swift in Sources */,
+				SERV000018 /* ImageLoadingService.swift in Sources */,
 				UTIL000001 /* Utilities.swift in Sources */,
+				UTIL000002 /* RenderingConstants.swift in Sources */,
+				UTIL000003 /* DesignSystem.swift in Sources */,
+				VMDL000001 /* DrawingsDialogViewModel.swift in Sources */,
 				EXTN000001 /* PDFPage+Compression.swift in Sources */,
+				57ADEB0CC3AA02FC41A14A23 /* ILovePDFWebService.swift in Sources */,
+				SERV000019 /* MultiCropCV2Service.swift in Sources */,
+				378CC647FBA5ADA4D128EAF9 /* ImpositionModels.swift in Sources */,
+				7F36FC30D0D32CB6416AB3C4 /* ImpositionService.swift in Sources */,
+				B0B6B0A53D05F000A805ABA5 /* ImpositionDialog.swift in Sources */,
+				CB2C5DA56102C2C595B50EC7 /* ExpandService.swift in Sources */,
+				3677832BFC0B1071980E0D98 /* ExpandDialog.swift in Sources */,
+				6F634DE34D9D5050A68B3B9F /* ThumbnailCache.swift in Sources */,
+				B702A4235339AE799486CC6E /* TilePDFService.swift in Sources */,
+				FBDB45B05CCA40CE1A84800C /* TilePDFDialog.swift in Sources */,
+				4248E923E44DAD9555304111 /* InDesignService.swift in Sources */,
+				B80124C41A32D58E0DC3621B /* InDesignImportDialog.swift in Sources */,
+				SERV000020 /* StitchService.swift in Sources */,
+				MODEL00007 /* StitchModels.swift in Sources */,
+				VIEW000016 /* StitchDialog.swift in Sources */,
+				SERV000021 /* WatermarkService.swift in Sources */,
+				SERV000022 /* NativeStitchService.swift in Sources */,
+				VIEW000017 /* WatermarkDialog.swift in Sources */,
+				SERV000023 /* ImageAdjustService.swift in Sources */,
+				VIEW000018 /* ImageAdjustDialog.swift in Sources */,
+				SERV000024 /* BackgroundRemovalService.swift in Sources */,
+				SERVFILE25 /* ResizeService.swift in Sources */,
+				VIEWFILE19 /* ResizeDialog.swift in Sources */,
+				MODELFILE8 /* GalleryModels.swift in Sources */,
+				SERVFILE26 /* GalleryService.swift in Sources */,
+				SERVFILE27 /* GalleryInDesignService.swift in Sources */,
+				VIEWFILE20 /* GalleryDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -352,7 +530,10 @@
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = "DEBUG=1 ";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					" ",
+				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -374,9 +555,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -384,12 +565,12 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = "PrintManager/Resources/Info.plist";
+				INFOPLIST_FILE = PrintManager/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = " @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.printmanager;
-				PRODUCT_NAME = "PrintManager";
+				PRODUCT_NAME = PrintManager;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -400,9 +581,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -410,12 +591,12 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = "PrintManager/Resources/Info.plist";
+				INFOPLIST_FILE = PrintManager/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = " @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.printmanager;
-				PRODUCT_NAME = "PrintManager";
+				PRODUCT_NAME = PrintManager;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

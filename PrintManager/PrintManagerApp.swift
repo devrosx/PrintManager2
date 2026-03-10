@@ -120,11 +120,7 @@ struct PrintManagerApp: App {
 
     init() {
         // Request notification permissions
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("Notification authorization error: \(error.localizedDescription)")
-            }
-        }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     var body: some Scene {
@@ -155,14 +151,6 @@ struct PrintManagerApp: App {
                 .keyboardShortcut("o", modifiers: .command)
             }
 
-            CommandGroup(after: .undoRedo) {
-                Button("Rename Selected…") {
-                    appState.openBatchRename()
-                }
-                .keyboardShortcut("r", modifiers: [.command, .option])
-                .disabled(appState.selectedFiles.isEmpty)
-            }
-
             CommandMenu("File Operations") {
                 Button("Clear All") {
                     appState.clearAllFiles()
@@ -176,70 +164,26 @@ struct PrintManagerApp: App {
 
                 Divider()
 
+                Button("Rename Selected…") {
+                    appState.openBatchRename()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(appState.selectedFiles.isEmpty)
+
+                Divider()
+
                 Button("Print Selected") {
                     appState.printSelectedFiles()
                 }
                 .keyboardShortcut("p", modifiers: .command)
             }
-            
+
             CommandMenu("PDF Operations") {
-                Button("Split PDF") {
-                    appState.splitPDF()
-                }
-                
-                Button("Merge PDFs") {
-                    appState.mergePDFs()
-                }
-                
-                Button("Compress PDF") {
-                    appState.compressPDF()
-                }
-                
-                Divider()
-                
-                Button("OCR PDF") {
-                    appState.ocrPDF()
-                }
-                
-                Button("Crop PDF") {
-                    appState.cropPDF()
-                }
-                
-                Button("Smart Crop") {
-                    appState.smartCropFiles()
-                }
-                
-                Button("Rasterize PDF") {
-                    appState.rasterizePDF()
-                }
+                pdfActionsMenuContent(appState)
             }
-            
+
             CommandMenu("Image Operations") {
-                Button("Convert to PDF") {
-                    appState.convertImageToPDF()
-                }
-                
-                Button("Resize Image") {
-                    appState.resizeImage()
-                }
-                
-                Button("Rotate Image") {
-                    appState.rotateImage()
-                }
-                
-                Button("Invert Colors") {
-                    appState.invertImage()
-                }
-                
-                Divider()
-                
-                Button("Extract Images from PDF") {
-                    appState.extractImagesFromPDF()
-                }
-                
-                Button("Detect & Extract Sub-Images") {
-                    appState.detectAndExtractImages()
-                }
+                imageActionsMenuContent(appState)
             }
             
             CommandMenu("View") {
@@ -250,11 +194,13 @@ struct PrintManagerApp: App {
                 }
                 .keyboardShortcut("i", modifiers: .command)
             }
-        }
-        
-        Settings {
-            SettingsView()
-                .environmentObject(appState)
+
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    appState.showSettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

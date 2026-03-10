@@ -2,377 +2,240 @@
 //  SmartCropService.swift
 //  PrintManager
 //
-//  Service for smart cropping: detect white borders and crop images and PDFs automatically
+//  Detekuje bílé okraje ze všech 4 stran a ořeže je.
+//  Funguje pro PDF (stránky se rastrují před detekcí) i obrázky.
+//  Výstup: originální_název_sc.ext
 //
 
 import Foundation
 import AppKit
-import CoreImage
 import PDFKit
-import Vision
 
 class SmartCropService {
-    
-    // MARK: - Smart Crop Main Function
-    
+
+    /// Pixel světlejší nebo rovný tomuto prahu se považuje za bílý okraj (0–255).
+    /// 245 pokryje běžné "bílé" pozadí včetně #f8f8f8 (248) či #f5f5f5 (245).
+    private let whiteThreshold: UInt8 = 245
+    /// Krok vzorkování — každý druhý pixel pro rychlost.
+    private let step = 2
+
+    // MARK: - Public API
+
     func smartCropFiles(urls: [URL]) async throws -> [URL] {
-        var outputURLs: [URL] = []
-        
+        var result: [URL] = []
         for url in urls {
-            let outputURL: URL
-            
-            if url.pathExtension.lowercased() == "pdf" {
-                outputURL = try await smartCropPDF(url: url)
-            } else if isImageFile(url: url) {
-                outputURL = try await smartCropImage(url: url)
+            let ext = url.pathExtension.lowercased()
+            if ext == "pdf" {
+                result.append(try await smartCropPDF(url: url))
+            } else if ["png", "jpg", "jpeg", "tiff", "tif", "bmp", "gif"].contains(ext) {
+                result.append(try await smartCropImage(url: url))
             } else {
                 throw SmartCropError.unsupportedFormat
             }
-            
-            outputURLs.append(outputURL)
         }
-        
-        return outputURLs
+        return result
     }
-    
-    // MARK: - Smart Crop PDF
-    
+
+    // MARK: - PDF
+
     private func smartCropPDF(url: URL) async throws -> URL {
-        guard let pdfDocument = PDFDocument(url: url) else {
-            throw SmartCropError.invalidPDF
-        }
-        
-        let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_smart_cropped")
-            .appendingPathExtension("pdf")
-        
-        // Create temporary directory for image processing
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PrintManager_SmartCrop_\(UUID().uuidString)")
-        
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        
-        defer {
-            try? FileManager.default.removeItem(at: tempDir)
-        }
-        
-        // Process each page
-        for pageIndex in 0..<pdfDocument.pageCount {
-            guard let page = pdfDocument.page(at: pageIndex) else { continue }
-            
-            // Convert page to image for analysis
-            let imageSize = CGSize(width: 1200, height: 1600) // High enough resolution for accurate detection
-            let pageImage = page.thumbnail(of: imageSize, for: .mediaBox)
-            
-            // Analyze image to find crop bounds
-            guard let cropBounds = detectCropBounds(image: pageImage) else {
-                continue // Skip if detection fails
-            }
-            
-            // Convert crop bounds back to PDF coordinates
-            let pageBounds = page.bounds(for: .mediaBox)
-            let scaleFactorX = pageBounds.width / imageSize.width
-            let scaleFactorY = pageBounds.height / imageSize.height
-            
-            let pdfCropRect = CGRect(
-                x: cropBounds.origin.x * scaleFactorX,
-                y: pageBounds.height - (cropBounds.origin.y + cropBounds.height) * scaleFactorY,
-                width: cropBounds.width * scaleFactorX,
-                height: cropBounds.height * scaleFactorY
+        guard let doc = PDFDocument(url: url) else { throw SmartCropError.invalidPDF }
+        let outputURL = outputPath(for: url)
+
+        for i in 0..<doc.pageCount {
+            guard let page = doc.page(at: i) else { continue }
+            let mediaBox = page.bounds(for: .mediaBox)
+            guard mediaBox.width > 0, mediaBox.height > 0 else { continue }
+
+            // thumbnail() spolehlivě rastruje všechny typy PDF obsahu.
+            // Renderujeme ve 2× rozlišení pro přesnější detekci okrajů.
+            let nsImage = page.thumbnail(
+                of: CGSize(width: mediaBox.width * 2, height: mediaBox.height * 2),
+                for: .mediaBox
             )
-            
-            // Apply crop to page
-            page.setBounds(pdfCropRect, for: .cropBox)
+            guard let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+
+            // Použijeme skutečné pixelové rozměry — na Retina může být @2×, ale
+            // výpočet scale faktorů přes cgImage.width/height to automaticky koriguje.
+            let imgW = CGFloat(cgImage.width)
+            let imgH = CGFloat(cgImage.height)
+            let scaleX = mediaBox.width  / imgW
+            let scaleY = mediaBox.height / imgH
+
+            guard let m = detectMargins(in: cgImage) else { continue }
+
+            // CGImage z thumbnail(): y=0 nahoře = vizuální vršek stránky
+            // PDF souřadnice:       y=0 dole   = vizuální spodek stránky
+            //
+            // m.top    = bílé řádky od vrchu CGImage = bílý okraj nahoře stránky
+            // m.bottom = bílé řádky od spodu CGImage = bílý okraj dole stránky
+            //
+            // CropBox spodní hrana (PDF y): origin.y + m.bottom * scaleY
+            // CropBox levá hrana:           origin.x + m.left   * scaleX
+            let cropBox = CGRect(
+                x:      mediaBox.origin.x + CGFloat(m.left)          * scaleX,
+                y:      mediaBox.origin.y + CGFloat(m.bottom)         * scaleY,
+                width:  CGFloat(m.contentW) * scaleX,
+                height: CGFloat(m.contentH) * scaleY
+            )
+            guard cropBox.width > 0, cropBox.height > 0 else { continue }
+            // Nastavíme MediaBox — změní se skutečné rozměry stránky.
+            // CropBox resetujeme na nový MediaBox (relativní souřadnice od nového originu).
+            page.setBounds(cropBox, for: .mediaBox)
+            page.setBounds(CGRect(origin: .zero, size: cropBox.size), for: .cropBox)
         }
-        
-        pdfDocument.write(to: outputURL)
+
+        doc.write(to: outputURL)
         return outputURL
     }
-    
-    // MARK: - Smart Crop Image
-    
+
+    // MARK: - Obrázek
+
     private func smartCropImage(url: URL) async throws -> URL {
-        guard let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw SmartCropError.invalidImage
-        }
-        
-        // Analyze image to find crop bounds
-        let imageSize = CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
-        let cropBounds = detectCropBounds(cgImage: cgImage, imageSize: imageSize)
-        
-        guard let cropRect = cropBounds else {
+        guard let nsImage = NSImage(contentsOf: url),
+              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { throw SmartCropError.invalidImage }
+
+        guard let m = detectMargins(in: cgImage) else {
             throw SmartCropError.cropDetectionFailed
         }
-        
-        // Crop the image
-        guard let croppedCGImage = cgImage.cropping(to: cropRect) else {
+
+        // CGImage cropping: x=left, y=top (y=0 nahoře)
+        let cropRect = CGRect(x: m.left, y: m.top, width: m.contentW, height: m.contentH)
+        guard let cropped = cgImage.cropping(to: cropRect) else {
             throw SmartCropError.cropFailed
         }
-        
-        let croppedImage = NSImage(
-            cgImage: croppedCGImage,
-            size: NSSize(width: croppedCGImage.width, height: croppedCGImage.height)
-        )
-        
-        let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_smart_cropped")
-            .appendingPathExtension(url.pathExtension)
-        
-        try saveImage(croppedImage, to: outputURL)
+
+        let output = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
+        let outputURL = outputPath(for: url)
+        try saveImage(output, to: outputURL, ext: url.pathExtension)
         return outputURL
     }
-    
-    // MARK: - Crop Bounds Detection
-    
-    private func detectCropBounds(image: NSImage) -> CGRect? {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return nil
-        }
-        
-        let imageSize = CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
-        return detectCropBounds(cgImage: cgImage, imageSize: imageSize)
+
+    // MARK: - Detekce bílých okrajů
+
+    private struct Margins {
+        let top: Int    // bílé řádky od vrchu (y=0)
+        let bottom: Int // bílé řádky od spodu
+        let left: Int
+        let right: Int
+        let w: Int
+        let h: Int
+        var contentW: Int { w - left - right }
+        var contentH: Int { h - top  - bottom }
     }
-    
-    private func detectCropBounds(cgImage: CGImage, imageSize: CGSize) -> CGRect? {
-        // Convert to grayscale for faster processing
-        guard let grayImage = convertToGrayscale(cgImage: cgImage) else {
-            return nil
+
+    /// Detekuje bílé okraje v CGImage (y=0 nahoře).
+    /// Vrátí počet bílých řádků/sloupců od každé strany.
+    private func detectMargins(in cgImage: CGImage) -> Margins? {
+        guard let gray = toGrayscale(cgImage) else { return nil }
+        let w = gray.width, h = gray.height
+        guard w > 0, h > 0,
+              let dp  = gray.dataProvider?.data,
+              let ptr = CFDataGetBytePtr(dp) else { return nil }
+        let len = CFDataGetLength(dp)
+        let t   = whiteThreshold
+
+        func px(_ x: Int, _ y: Int) -> UInt8 {
+            let i = y * w + x
+            return (i >= 0 && i < len) ? ptr[i] : 255
         }
-        
-        // Analyze edges to find content boundaries
-        let top = findContentEdge(image: grayImage, direction: .top, imageSize: imageSize)
-        let bottom = findContentEdge(image: grayImage, direction: .bottom, imageSize: imageSize)
-        let left = findContentEdge(image: grayImage, direction: .left, imageSize: imageSize)
-        let right = findContentEdge(image: grayImage, direction: .right, imageSize: imageSize)
-        
-        // Validate that we found reasonable bounds
-        guard top < bottom && left < right else {
-            return nil
-        }
-        
-        // Add small padding to avoid cutting off content
-        let padding: CGFloat = 2.0
-        let cropRect = CGRect(
-            x: max(0, left - padding),
-            y: max(0, top - padding),
-            width: min(imageSize.width - left - padding, right - left + padding * 2),
-            height: min(imageSize.height - top - padding, bottom - top + padding * 2)
-        )
-        
-        return cropRect
-    }
-    
-    // MARK: - Edge Detection
-    
-    private enum Direction {
-        case top, bottom, left, right
-    }
-    
-    private func findContentEdge(image: CGImage, direction: Direction, imageSize: CGSize) -> CGFloat {
-        let width = image.width
-        let height = image.height
-        
-        // Sample every few pixels to speed up processing
-        let sampleStep: Int = 4
-        let threshold: UInt8 = 240 // White threshold (0-255)
-        
-        switch direction {
-        case .top:
-            return findEdgeFromTop(image: image, width: width, height: height, sampleStep: sampleStep, threshold: threshold)
-        case .bottom:
-            return findEdgeFromBottom(image: image, width: width, height: height, sampleStep: sampleStep, threshold: threshold)
-        case .left:
-            return findEdgeFromLeft(image: image, width: width, height: height, sampleStep: sampleStep, threshold: threshold)
-        case .right:
-            return findEdgeFromRight(image: image, width: width, height: height, sampleStep: sampleStep, threshold: threshold)
-        }
-    }
-    
-    private func findEdgeFromTop(image: CGImage, width: Int, height: Int, sampleStep: Int, threshold: UInt8) -> CGFloat {
-        guard let dataProvider = image.dataProvider,
-              let data = dataProvider.data else {
-            return 0
-        }
-        
-        let bytesPerPixel = 1 // Grayscale
-        let bytesPerRow = width * bytesPerPixel
-        let bytes = CFDataGetBytePtr(data)!
-        
-        // Start from top and move down
-        for y in stride(from: 0, to: height, by: sampleStep) {
-            let rowOffset = y * bytesPerRow
-            
-            // Check if this row has non-white content
-            for x in stride(from: 0, to: width, by: sampleStep) {
-                let pixelOffset = rowOffset + x * bytesPerPixel
-                let pixelValue = bytes[pixelOffset]
-                
-                if pixelValue < threshold {
-                    return CGFloat(y)
-                }
+
+        // ── Horní okraj: první řádek (od y=0) s nebílým pixelem ──
+        var top = 0
+        topScan: while top < h {
+            for x in stride(from: 0, to: w, by: step) {
+                if px(x, top) < t { break topScan }
             }
+            top += step
         }
-        
-        return 0 // No content found, keep original
-    }
-    
-    private func findEdgeFromBottom(image: CGImage, width: Int, height: Int, sampleStep: Int, threshold: UInt8) -> CGFloat {
-        guard let dataProvider = image.dataProvider,
-              let data = dataProvider.data else {
-            return CGFloat(height)
-        }
-        
-        let bytesPerPixel = 1 // Grayscale
-        let bytesPerRow = width * bytesPerPixel
-        let bytes = CFDataGetBytePtr(data)!
-        
-        // Start from bottom and move up
-        for y in stride(from: height - 1, to: 0, by: -sampleStep) {
-            let rowOffset = y * bytesPerRow
-            
-            // Check if this row has non-white content
-            for x in stride(from: 0, to: width, by: sampleStep) {
-                let pixelOffset = rowOffset + x * bytesPerPixel
-                let pixelValue = bytes[pixelOffset]
-                
-                if pixelValue < threshold {
-                    return CGFloat(y + 1)
-                }
+        if top >= h { return nil }  // celý obrázek je bílý
+
+        // ── Dolní okraj: první řádek od spodu s nebílým pixelem ──
+        var botRow = h - 1
+        botScan: while botRow > top {
+            for x in stride(from: 0, to: w, by: step) {
+                if px(x, botRow) < t { break botScan }
             }
+            botRow -= step
         }
-        
-        return CGFloat(height) // No content found, keep original
-    }
-    
-    private func findEdgeFromLeft(image: CGImage, width: Int, height: Int, sampleStep: Int, threshold: UInt8) -> CGFloat {
-        guard let dataProvider = image.dataProvider,
-              let data = dataProvider.data else {
-            return 0
-        }
-        
-        let bytesPerPixel = 1 // Grayscale
-        let bytesPerRow = width * bytesPerPixel
-        let bytes = CFDataGetBytePtr(data)!
-        
-        // Start from left and move right
-        for x in stride(from: 0, to: width, by: sampleStep) {
-            // Check if this column has non-white content
-            for y in stride(from: 0, to: height, by: sampleStep) {
-                let pixelOffset = y * bytesPerRow + x * bytesPerPixel
-                let pixelValue = bytes[pixelOffset]
-                
-                if pixelValue < threshold {
-                    return CGFloat(x)
-                }
+        let bottom = h - 1 - botRow
+
+        // ── Levý okraj ──
+        var lft = 0
+        lftScan: while lft < w {
+            for y in stride(from: top, through: botRow, by: step) {
+                if px(lft, y) < t { break lftScan }
             }
+            lft += step
         }
-        
-        return 0 // No content found, keep original
-    }
-    
-    private func findEdgeFromRight(image: CGImage, width: Int, height: Int, sampleStep: Int, threshold: UInt8) -> CGFloat {
-        guard let dataProvider = image.dataProvider,
-              let data = dataProvider.data else {
-            return CGFloat(width)
-        }
-        
-        let bytesPerPixel = 1 // Grayscale
-        let bytesPerRow = width * bytesPerPixel
-        let bytes = CFDataGetBytePtr(data)!
-        
-        // Start from right and move left
-        for x in stride(from: width - 1, to: 0, by: -sampleStep) {
-            // Check if this column has non-white content
-            for y in stride(from: 0, to: height, by: sampleStep) {
-                let pixelOffset = y * bytesPerRow + x * bytesPerPixel
-                let pixelValue = bytes[pixelOffset]
-                
-                if pixelValue < threshold {
-                    return CGFloat(x + 1)
-                }
+
+        // ── Pravý okraj ──
+        var rgtRow = w - 1
+        rgtScan: while rgtRow > lft {
+            for y in stride(from: top, through: botRow, by: step) {
+                if px(rgtRow, y) < t { break rgtScan }
             }
+            rgtRow -= step
         }
-        
-        return CGFloat(width) // No content found, keep original
+        let right = w - 1 - rgtRow
+
+        let cw = w - lft - right
+        let ch = h - top  - bottom
+        guard cw > 0, ch > 0 else { return nil }
+        return Margins(top: top, bottom: bottom, left: lft, right: right, w: w, h: h)
     }
-    
-    // MARK: - Image Processing Helpers
-    
-    private func convertToGrayscale(cgImage: CGImage) -> CGImage? {
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        let context = CGContext(
-            data: nil,
-            width: cgImage.width,
-            height: cgImage.height,
-            bitsPerComponent: 8,
-            bytesPerRow: cgImage.width,
-            space: colorSpace,
-            bitmapInfo: 0
-        )
-        
-        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
-        return context?.makeImage()
+
+    // MARK: - Helpers
+
+    private func toGrayscale(_ src: CGImage) -> CGImage? {
+        let w = src.width, h = src.height
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: w,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+        ctx.draw(src, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
     }
-    
-    private func saveImage(_ image: NSImage, to url: URL) throws {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+
+    private func outputPath(for url: URL) -> URL {
+        url.deletingLastPathComponent()
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_sc")
+            .appendingPathExtension(url.pathExtension)
+    }
+
+    private func saveImage(_ image: NSImage, to url: URL, ext: String) throws {
+        guard let tiff = image.tiffRepresentation,
+              let rep  = NSBitmapImageRep(data: tiff) else { throw SmartCropError.saveFailed }
+        let type: NSBitmapImageRep.FileType
+        switch ext.lowercased() {
+        case "jpg", "jpeg": type = .jpeg
+        case "tiff", "tif": type = .tiff
+        case "bmp":         type = .bmp
+        default:            type = .png
+        }
+        guard let data = rep.representation(using: type, properties: [:]) else {
             throw SmartCropError.saveFailed
         }
-        
-        let fileType: NSBitmapImageRep.FileType
-        switch url.pathExtension.lowercased() {
-        case "png":
-            fileType = .png
-        case "jpg", "jpeg":
-            fileType = .jpeg
-        case "tiff", "tif":
-            fileType = .tiff
-        case "bmp":
-            fileType = .bmp
-        default:
-            fileType = .png
-        }
-        
-        guard let data = bitmapRep.representation(using: fileType, properties: [:]) else {
-            throw SmartCropError.saveFailed
-        }
-        
         try data.write(to: url)
-    }
-    
-    private func isImageFile(url: URL) -> Bool {
-        let imageExtensions = ["png", "jpg", "jpeg", "tiff", "tif", "bmp", "gif"]
-        let ext = url.pathExtension.lowercased()
-        return imageExtensions.contains(ext)
     }
 }
 
-// MARK: - Smart Crop Errors
+// MARK: - Errors
 
 enum SmartCropError: LocalizedError {
-    case invalidPDF
-    case invalidImage
-    case unsupportedFormat
-    case cropDetectionFailed
-    case cropFailed
-    case saveFailed
-    
+    case invalidPDF, invalidImage, unsupportedFormat, cropDetectionFailed, cropFailed, saveFailed
+
     var errorDescription: String? {
         switch self {
-        case .invalidPDF:
-            return "Invalid PDF file"
-        case .invalidImage:
-            return "Invalid image file"
-        case .unsupportedFormat:
-            return "Unsupported file format for smart crop"
-        case .cropDetectionFailed:
-            return "Failed to detect crop boundaries"
-        case .cropFailed:
-            return "Failed to crop image"
-        case .saveFailed:
-            return "Failed to save cropped file"
+        case .invalidPDF:           return "Invalid PDF file"
+        case .invalidImage:         return "Invalid image file"
+        case .unsupportedFormat:    return "Unsupported file format for smart crop"
+        case .cropDetectionFailed:  return "Failed to detect crop boundaries"
+        case .cropFailed:           return "Failed to crop image"
+        case .saveFailed:           return "Failed to save cropped file"
         }
     }
 }
