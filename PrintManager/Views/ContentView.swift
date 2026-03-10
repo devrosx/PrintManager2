@@ -1656,6 +1656,7 @@ struct CompactPreviewPanel: View {
     @EnvironmentObject var appState: AppState
     @State private var currentPage = 0
     @State private var selectedTab: Int = 0
+    @State private var showLargePreview = false
 
     private var selectedFile: FileItem? {
         guard appState.selectedFiles.count == 1,
@@ -1717,6 +1718,12 @@ struct CompactPreviewPanel: View {
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, DS.Spacing.small)
                             .padding(.top, DS.Spacing.small)
+                            .onTapGesture { showLargePreview = true }
+                            .help("Klikni pro velký náhled")
+                            .sheet(isPresented: $showLargePreview) {
+                                LargePreviewSheet(file: file, startPage: currentPage)
+                                    .environmentObject(appState)
+                            }
 
                         Text(file.name + "." + file.fileType.rawValue.lowercased())
                             .font(DS.Typography.captionSemibold)
@@ -2650,6 +2657,70 @@ struct StatusBadge: View {
         .foregroundColor(status.color)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Status: \(status.rawValue)")
+    }
+}
+
+// MARK: - Large Preview Sheet
+
+struct LargePreviewSheet: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let file: FileItem
+    @State private var page: Int
+
+    init(file: FileItem, startPage: Int) {
+        self.file = file
+        self._page = State(initialValue: startPage)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack {
+                Text(file.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                if file.pageCount > 1 {
+                    HStack(spacing: DS.Spacing.small) {
+                        Button { if page > 0 { page -= 1 } } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .disabled(page == 0)
+                        .buttonStyle(.borderless)
+
+                        Text("\(page + 1) / \(file.pageCount)")
+                            .font(DS.Typography.subheadline)
+                            .monospacedDigit()
+
+                        Button { if page < file.pageCount - 1 { page += 1 } } label: {
+                            Image(systemName: "chevron.right")
+                        }
+                        .disabled(page >= file.pageCount - 1)
+                        .buttonStyle(.borderless)
+                    }
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+            .padding(.horizontal, DS.Spacing.large)
+            .padding(.vertical, DS.Spacing.small)
+
+            Divider()
+
+            // Preview
+            PreviewImageView(file: file, currentPage: $page)
+                .id("\(file.id)-\(page)")
+                .padding(DS.Spacing.medium)
+        }
+        .frame(minWidth: 600, minHeight: 500)
+        .background(DS.Colors.windowBackground)
     }
 }
 

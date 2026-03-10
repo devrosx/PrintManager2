@@ -314,6 +314,9 @@
 "Rámeček" = "Frame";
 "Rámeček = stránka: \(w) × \(h) mm (1:1)" = "Frame = page: \(w) × \(h) mm (1:1)";
 
+/* MARK: - Large Preview */
+"Klikni pro velký náhled" = "Click for large preview";
+
 /* MARK: - Buttons (universal) */
 "Zavřít" = "Close";
 "Zavřít (mezerník)" = "Close (Space)";
