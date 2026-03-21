@@ -189,6 +189,17 @@ struct GallerySettings {
     var frameBorderWidth: Double             = 0.5  // pt
     var frameBorderColor: Color              = .black
 
+    // Barva pozadí stránky
+    var pageBackgroundColor: Color           = .white
+
+    // Stín za obrázkem
+    var addFrameShadow:  Bool                = false
+    var shadowOffsetX:   Double              = 2.0   // mm
+    var shadowOffsetY:   Double              = 2.0   // mm
+    var shadowBlur:      Double              = 3.0   // mm
+    var shadowOpacity:   Double              = 50.0  // % 0–100
+    var shadowColor:     Color               = .black
+
     // Rovnoměrné vyplnění stránky (auto cols/rows z počtu obrázků)
     var fillPageEvenly:  Bool                = false
     // Automaticky doplnit kopie obrázků aby se vyplnily všechny buňky na stránce
@@ -244,12 +255,88 @@ struct GallerySettings {
     }
 }
 
+// MARK: - Color Hex Utilities (pro serializaci předvoleb)
+
+func galleryColorToHex(_ color: Color) -> String {
+    guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return "#000000FF" }
+    let r = Int((ns.redComponent   * 255).rounded())
+    let g = Int((ns.greenComponent * 255).rounded())
+    let b = Int((ns.blueComponent  * 255).rounded())
+    let a = Int((ns.alphaComponent * 255).rounded())
+    return String(format: "#%02X%02X%02X%02X", r, g, b, a)
+}
+
+func galleryColorFromHex(_ hex: String) -> Color {
+    var h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+    if h.count == 6 { h += "FF" }
+    guard h.count == 8, let val = UInt64(h, radix: 16) else { return .black }
+    let r = Double((val >> 24) & 0xFF) / 255.0
+    let g = Double((val >> 16) & 0xFF) / 255.0
+    let b = Double((val >>  8) & 0xFF) / 255.0
+    let a = Double( val        & 0xFF) / 255.0
+    return Color(NSColor(srgbRed: r, green: g, blue: b, alpha: a))
+}
+
+// MARK: - Presets
+
+struct GalleryPresetData: Codable, Identifiable {
+    var id: UUID   = UUID()
+    var name: String
+
+    var paperSizeRaw:   String = GalleryPaperSize.a4.rawValue
+    var orientationRaw: String = GalleryOrientation.portrait.rawValue
+    var customPaperW:   Double = 210
+    var customPaperH:   Double = 297
+
+    var frameSizeRaw:   String = GalleryFrameSize.s10x15.rawValue
+    var customFrameW:   Double = 100
+    var customFrameH:   Double = 150
+
+    var marginTop:    Double = 10
+    var marginBottom: Double = 10
+    var marginLeft:   Double = 10
+    var marginRight:  Double = 10
+    var gutterH:      Double = 5
+    var gutterV:      Double = 5
+
+    var addCropMarks: Bool   = false
+    var cropMarkLen:  Double = 5
+    var cropMarkOff:  Double = 2
+    var cropMarkW:    Double = 0.25
+
+    var addFrameBorder:  Bool   = false
+    var borderWidth:     Double = 0.5
+    var borderColorHex:  String = "#000000FF"
+
+    var addFrameShadow:  Bool   = false
+    var shadowOffsetX:   Double = 2.0
+    var shadowOffsetY:   Double = 2.0
+    var shadowBlur:      Double = 3.0
+    var shadowOpacity:   Double = 50.0
+    var shadowColorHex:  String = "#000000FF"
+
+    var pageBackgroundHex: String = "#FFFFFFFF"
+
+    var fillPageEvenly: Bool = false
+    var autoFillPage:   Bool = false
+
+    var showImageLabel:  Bool   = false
+    var labelInside:     Bool   = false
+    var labelFontName:   String = "Helvetica Neue"
+    var labelFontSize:   Double = 9
+    var labelAlignRaw:   String = GalleryLabelAlignment.center.rawValue
+    var labelColorHex:      String = "#000000FF"
+    var labelBackgroundHex: String = "#00000000"
+
+    var resampleImages: Bool = true
+}
+
 // MARK: - Per-image pan/zoom state
 
 struct GalleryImageState: Identifiable {
     let id: UUID
     let url: URL
-    /// Offset středu viditelné plochy vůči středu obrázku (v mm od středu rámečku, normalizovaně)
+    /// Normalizovaný posun výřezu: 0 = střed, ±1 = max. posun v dané ose. Scale-nezávislé.
     var panOffset: CGSize   = .zero
     /// Měřítko přiblížení (1.0 = vyplní rámeček)
     var zoom: Double        = 1.0

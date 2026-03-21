@@ -205,43 +205,13 @@ struct ContentView: View {
                     }
                     return nil
                 }
-                // Mezerník — Inline Quick Look (přepíná mezi seznamem souborů a náhledem)
+                // Mezerník — plovoucí QuickLook náhled (přes celé okno)
                 if event.keyCode == 49 {
                     let responder = NSApp.keyWindow?.firstResponder
                     let inTextField = responder is NSTextView || responder is NSTextField
                     if !inTextField && !appState.files.isEmpty {
                         DispatchQueue.main.async {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                appState.showInlineQuickLook.toggle()
-
-                                if appState.showInlineQuickLook {
-                                    // Naplnit seznam souborů k procházení (zachovat pořadí z files)
-                                    if appState.selectedFiles.count > 1 {
-                                        appState.quickLookFileIDs = appState.files
-                                            .filter { appState.selectedFiles.contains($0.id) }
-                                            .map(\.id)
-                                    } else {
-                                        appState.quickLookFileIDs = appState.files.map(\.id)
-                                    }
-                                    // Při otevření nastavit aktuálně vybraný soubor
-                                    if let firstID = appState.selectedFiles.first {
-                                        appState.quickLookFileID = firstID
-                                    } else if let firstFile = appState.files.first {
-                                        appState.quickLookFileID = firstFile.id
-                                    }
-                                    // Pro obrázky rovnou detailní náhled, pro ostatní thumbnails
-                                    let selectedFile = appState.files.first { $0.id == appState.quickLookFileID }
-                                    if selectedFile?.fileType.isImage == true {
-                                        appState.quickLookMode = .singlePage
-                                    } else {
-                                        appState.quickLookMode = .thumbnails
-                                    }
-                                    appState.quickLookCurrentPage = 0
-                                } else {
-                                    // Při zavření resetovat režim
-                                    appState.quickLookMode = .thumbnails
-                                }
-                            }
+                            QuickLookController.shared.toggle(appState: appState)
                         }
                         return nil
                     }
@@ -1241,7 +1211,19 @@ struct DropFileTableView: View {
                             }
                         }
                     } primaryAction: { items in
-                        appState.openInDefaultApp(items: items)
+                        // Dvojklik na PDF → inline QuickLook (thumbnail mřížka stránek)
+                        let selectedFiles = appState.files.filter { items.contains($0.id) }
+                        if items.count == 1, let file = selectedFiles.first, file.fileType == .pdf {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                appState.quickLookFileIDs = appState.files.map(\.id)
+                                appState.quickLookFileID  = file.id
+                                appState.quickLookCurrentPage = 0
+                                appState.quickLookMode = .thumbnails
+                                appState.showInlineQuickLook = true
+                            }
+                        } else {
+                            appState.openInDefaultApp(items: items)
+                        }
                     }
                 }
             } else {
@@ -1438,6 +1420,24 @@ struct FileListRow: View {
     let hiddenColumns: Set<FileListColumn>
 
     var body: some View {
+        let isSelected = appState.selectedFiles.contains(file.id)
+        let rowContent = rowHStack
+
+        // .onDrag se aplikuje POUZE na již vybrané řádky.
+        // Na nevybraných řádcích gesture recognizer onDrag blokuje první klik → selection nefungovala.
+        if isSelected {
+            rowContent
+                .onDrag {
+                    NSItemProvider(object: file.url as NSURL)
+                } preview: {
+                    dragPreview
+                }
+        } else {
+            rowContent
+        }
+    }
+
+    private var rowHStack: some View {
         HStack(spacing: 0) {
             FileRowView(file: file)
                 .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
@@ -1475,44 +1475,20 @@ struct FileListRow: View {
                 .frame(width: colWidths.converted, alignment: .center)
             }
         }
-        .onDrag {
-            // Registruje public.file-url – funguje pro přesun, otevření v aplikaci i tisk (ikona tiskárny)
-            // SwiftUI List automaticky přidá providery všech vybraných řádků do drag session
-            NSItemProvider(object: file.url as NSURL)
-        } preview: {
-            HStack(spacing: 6) {
-                Image(systemName: file.fileType.icon)
-                    .foregroundColor(file.fileType.listColor)
-                let isMulti = appState.selectedFiles.count > 1 && appState.selectedFiles.contains(file.id)
-                Text(isMulti ? "\(appState.selectedFiles.count) souborů" : file.name)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.regularMaterial)
-            .cornerRadius(8)
+    }
+
+    private var dragPreview: some View {
+        HStack(spacing: 6) {
+            Image(systemName: file.fileType.icon)
+                .foregroundColor(file.fileType.listColor)
+            let isMulti = appState.selectedFiles.count > 1 && appState.selectedFiles.contains(file.id)
+            Text(isMulti ? "\(appState.selectedFiles.count) souborů" : file.name)
+                .lineLimit(1)
         }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0).onEnded { value in
-                // Ignoruj skutečný drag, jen reaguj na kliknutí (pohyb < 5 pt)
-                let dist = hypot(value.translation.width, value.translation.height)
-                guard dist < 5 else { return }
-                let isShift = NSEvent.modifierFlags.contains(.shift)
-                let isCmd   = NSEvent.modifierFlags.contains(.command)
-                DispatchQueue.main.async {
-                    if isShift,
-                       let anchorID  = appState.rangeAnchorID,
-                       let anchorIdx = appState.sortedFiles.firstIndex(where: { $0.id == anchorID }),
-                       let curIdx    = appState.sortedFiles.firstIndex(where: { $0.id == file.id }) {
-                        let lo = min(anchorIdx, curIdx)
-                        let hi = max(anchorIdx, curIdx)
-                        appState.selectedFiles = Set(appState.sortedFiles[lo...hi].map { $0.id })
-                    } else if !isShift && !isCmd {
-                        appState.rangeAnchorID = file.id
-                    }
-                }
-            }
-        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial)
+        .cornerRadius(8)
     }
 }
 

@@ -4,7 +4,7 @@ A powerful macOS print management application built with SwiftUI, designed for p
 
 ![macOS](https://img.shields.io/badge/macOS-13.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
-![Version](https://img.shields.io/badge/version-2.0-green)
+![Version](https://img.shields.io/badge/version-2.1-green)
 
 ---
 
@@ -20,6 +20,7 @@ A powerful macOS print management application built with SwiftUI, designed for p
 - File list with sortable columns: name, format, size, pages, color info
 - Batch selection, reordering, and batch rename with custom patterns
 - Dock icon badge showing the current file count
+- Reliable single-click selection — drag source is only active on already-selected rows, eliminating gesture conflicts
 
 ### Printing
 - Fast printing via system `lp` command
@@ -60,8 +61,12 @@ Convert `.docx`, `.xlsx`, `.pptx` and other Office formats to PDF via:
 
 ### Gallery & InDesign
 - Create PDF galleries from a set of images with configurable grid layout and captions
+- **Frame border** — optional border around each image frame with configurable thickness and color
+- **Drop shadow** — shadow behind each image frame with offset X/Y, blur radius, opacity, and color
+- **Page background color** — custom background color for gallery pages (PDF and InDesign)
+- **Settings presets** — save, load, overwrite and delete named presets; all parameters including colors persisted as JSON in UserDefaults
 - Import files directly into Adobe InDesign as a placed-image document
-- Generate InDesign gallery layouts via JSX scripting
+- Generate InDesign gallery layouts via JSX scripting (border color, drop shadow and page background fully supported)
 
 ### Print Pricing Calculator
 - Per-page pricing for A4/A3 in B&W and color with tiered volume discounts

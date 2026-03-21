@@ -287,11 +287,11 @@ class AppState: ObservableObject {
     func openStitchDialog() {
         let images = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
         guard images.count >= 2 else {
-            logWarning("Vyber alespoň 2 obrázky pro Stitch")
+            logWarning("Select at least 2 images for Stitch")
             return
         }
         guard images.count <= 8 else {
-            logWarning("Stitch podporuje max. 8 obrázků najednou")
+            logWarning("Stitch supports max. 8 images at once")
             return
         }
         stitchImageFiles = images
@@ -304,7 +304,7 @@ class AppState: ObservableObject {
     func openWatermarkDialog() {
         let pdfs = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
         guard !pdfs.isEmpty else {
-            logWarning("Vyber alespoň jedno PDF pro přidání vodoznaku")
+            logWarning("Select at least one PDF to add a watermark")
             return
         }
         showWatermarkDialog = true
@@ -321,7 +321,7 @@ class AppState: ObservableObject {
     func openImageAdjustDialog() {
         let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
         guard !imgs.isEmpty else {
-            logWarning("Vyber alespoň jeden obrázek pro úpravy")
+            logWarning("Select at least one image for adjustments")
             return
         }
         imageAdjustFiles = imgs
@@ -335,7 +335,7 @@ class AppState: ObservableObject {
     func openGalleryDialog() {
         let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
         guard !imgs.isEmpty else {
-            logWarning("Vyber alespoň jeden obrázek pro tvorbu galerie")
+            logWarning("Select at least one image to create a gallery")
             return
         }
         galleryImageFiles = imgs
@@ -346,14 +346,14 @@ class AppState: ObservableObject {
     func removeBackground() {
         let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
         guard !imgs.isEmpty else {
-            logWarning("Vyber alespoň jeden obrázek pro odstranění pozadí")
+            logWarning("Select at least one image for background removal")
             return
         }
         guard BackgroundRemovalService.visionSupported else {
-            logError("Odstranění pozadí vyžaduje macOS 12 nebo novější")
+            logError("Background removal requires macOS 12 or later")
             return
         }
-        logInfo("Odstraňuji pozadí z \(imgs.count) obrázku/ů…")
+        logInfo("Removing background from \(imgs.count) image(s)…")
         Task {
             var results: [URL] = []
             for img in imgs {
@@ -372,7 +372,7 @@ class AppState: ObservableObject {
             await MainActor.run {
                 if !finished.isEmpty {
                     addFiles(urls: finished, autoSelect: false, markAsConverted: true)
-                    logSuccess("Pozadí odstraněno: \(finished.count) soubor(ů) → PNG")
+                    logSuccess("Background removed: \(finished.count) file(s) → PNG")
                 }
             }
         }
@@ -426,7 +426,7 @@ class AppState: ObservableObject {
 
     func openDrawingsDialog() {
         guard !selectedFiles.isEmpty else {
-            logWarning("Vyber soubory pro zpracování výkresů")
+            logWarning("Select files for drawings processing")
             return
         }
         showDrawingsDialog = true
@@ -435,7 +435,7 @@ class AppState: ObservableObject {
     func impositionPDF() {
         let pdfFiles = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
         guard !pdfFiles.isEmpty else {
-            logWarning("Vyber alespoň jedno PDF pro imposition")
+            logWarning("Select at least one PDF for imposition")
             return
         }
         impositionSourceFile = pdfFiles.first
@@ -449,7 +449,7 @@ class AppState: ObservableObject {
     func tilePDFAction() {
         let selected = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
         guard !selected.isEmpty else {
-            logWarning("Vyberte alespoň jeden PDF soubor pro funkci Tile")
+            logWarning("Select at least one PDF file for Tile")
             return
         }
         tilePDFFiles = selected
@@ -463,7 +463,7 @@ class AppState: ObservableObject {
     func expandFileAction() {
         guard let file = getSelectedFile(),
               file.fileType == .pdf || file.fileType.isImage else {
-            logWarning("Vyberte jeden soubor (PDF nebo obrázek) pro funkci Expand")
+            logWarning("Select one file (PDF or image) for Expand")
             return
         }
         expandFile = file
@@ -584,30 +584,30 @@ class AppState: ObservableObject {
 
     func addExternalApp(url: URL) {
         guard url.pathExtension.lowercased() == "app" else {
-            logWarning("Vyber soubor .app")
+            logWarning("Select an .app file")
             return
         }
         let name = url.deletingPathExtension().lastPathComponent
         guard !externalApps.contains(where: { $0.path == url.path }) else {
-            logWarning("Aplikace \(name) je již v seznamu")
+            logWarning("App \(name) is already in the list")
             return
         }
         externalApps.append(ExternalApp(id: UUID(), name: name, path: url.path))
         saveExternalApps()
-        logSuccess("Přidána aplikace: \(name)")
+        logSuccess("App added: \(name)")
     }
 
     func removeExternalApp(id: UUID) {
         guard let name = externalApps.first(where: { $0.id == id })?.name else { return }
         externalApps.removeAll { $0.id == id }
         saveExternalApps()
-        logInfo("Odebrána aplikace: \(name)")
+        logInfo("App removed: \(name)")
     }
 
     func openSelectedFilesInApp(_ app: ExternalApp) {
         let filesToOpen = files.filter { selectedFiles.contains($0.id) }
         guard !filesToOpen.isEmpty else {
-            logWarning("Nejsou vybrány žádné soubory")
+            logWarning("No files selected")
             return
         }
         let urls = filesToOpen.map { $0.url }
@@ -615,9 +615,9 @@ class AppState: ObservableObject {
                                 configuration: .init()) { _, error in
             DispatchQueue.main.async {
                 if let error = error {
-                    self.logError("Nelze otevřít v \(app.name): \(error.localizedDescription)")
+                    self.logError("Cannot open in \(app.name): \(error.localizedDescription)")
                 } else {
-                    self.logSuccess("Otevřeno v \(app.name): \(urls.count) soubor(ů)")
+                    self.logSuccess("Opened in \(app.name): \(urls.count) file(s)")
                 }
             }
         }
@@ -705,9 +705,9 @@ class AppState: ObservableObject {
             (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
         }.count
         if folderCount > 0 {
-            logInfo("Přidávám \(expandedURLs.count) soubor(ů) (z \(folderCount) složky/složek)…")
+            logInfo("Adding \(expandedURLs.count) file(s) (from \(folderCount) folder(s))…")
         } else {
-            logInfo("Přidávám \(expandedURLs.count) soubor(ů)…")
+            logInfo("Adding \(expandedURLs.count) file(s)…")
         }
 
         var officeURLs: [URL] = []
@@ -746,7 +746,7 @@ class AppState: ObservableObject {
                 guard var parsed = self.fileParser.parseFile(url: url) else {
                     DispatchQueue.main.async {
                         self.files.removeAll { $0.id == placeholderID }
-                        self.logError("Nelze načíst: \(url.lastPathComponent)")
+                        self.logError("Cannot load: \(url.lastPathComponent)")
                     }
                     return
                 }
@@ -757,7 +757,7 @@ class AppState: ObservableObject {
                 DispatchQueue.main.async {
                     if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
                         self.files[idx] = parsed
-                        if parsed.thumbnail != nil { self.logSuccess("Načteno: \(parsed.name)") }
+                        if parsed.thumbnail != nil { self.logSuccess("Loaded: \(parsed.name)") }
                     }
                 }
 
@@ -767,7 +767,7 @@ class AppState: ObservableObject {
                     DispatchQueue.main.async {
                         if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
                             self.files[idx].thumbnail = thumb
-                            self.logSuccess("Načteno: \(parsed.name)")
+                            self.logSuccess("Loaded: \(parsed.name)")
                         }
                     }
                 }
@@ -782,7 +782,7 @@ class AppState: ObservableObject {
         if !officeURLs.isEmpty {
             pendingOfficeFiles = officeURLs
             showOfficeImportDialog = true
-            logInfo("\(officeURLs.count) Office soubor(ů) vyžaduje konverzi do PDF")
+            logInfo("\(officeURLs.count) Office file(s) require PDF conversion")
         }
     }
     
@@ -804,14 +804,14 @@ class AppState: ObservableObject {
                 try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
                 successCount += 1
             } catch {
-                logError("Nelze přesunout do koše: \(file.name) – \(error.localizedDescription)")
+                logError("Cannot move to trash: \(file.name) – \(error.localizedDescription)")
             }
         }
         cleanupCache(for: ids)
         files.removeAll { ids.contains($0.id) }
         selectedFiles.subtract(ids)
         if successCount > 0 {
-            logInfo("Přesunuto do koše: \(successCount) soubor(ů)")
+            logInfo("Moved to trash: \(successCount) file(s)")
         }
     }
     
@@ -1007,27 +1007,27 @@ class AppState: ObservableObject {
     
     func openMultiCrop() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType.isImage else {
-            logWarning("Vyber jeden obrázek pro MultiCrop")
+            logWarning("Select one image for MultiCrop")
             return
         }
-        logInfo("Otevírám MultiCrop pro: \(selectedFile.name)")
+        logInfo("Opening MultiCrop for: \(selectedFile.name)")
         multiCropFile = selectedFile
         showMultiCropDialog = true
     }
 
     func openColorPageSelector() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
-            logWarning("Vyber jeden PDF soubor pro výběr barevných stránek")
+            logWarning("Select one PDF file for color page selection")
             return
         }
-        logInfo("Otevírám výběr barevných stránek pro: \(selectedFile.name)")
+        logInfo("Opening color page selection for: \(selectedFile.name)")
         colorPageSelectorFile = selectedFile
         showColorPageSelector = true
     }
 
     func openBatchRename() {
         guard !selectedFiles.isEmpty else {
-            logWarning("Vyber soubory pro přejmenování")
+            logWarning("Select files to rename")
             return
         }
         showBatchRename = true
@@ -1045,12 +1045,12 @@ class AppState: ObservableObject {
         let colorCount  = colorPages.count
         let totalPages  = file.pageCount
         let grayCount   = totalPages - colorCount
-        logInfo("Selektivní šedá: \(colorCount) barevných, \(grayCount) šedých stránek…")
+        logInfo("Selective gray: \(colorCount) color, \(grayCount) gray pages…")
         Task {
             do {
                 let outputURL = try await pdfService.convertSelectiveToGray(url: file.url, colorPages: colorPages)
                 await MainActor.run {
-                    logSuccess("Selektivní šedá hotova: \(outputURL.lastPathComponent)")
+                    logSuccess("Selective gray done: \(outputURL.lastPathComponent)")
                     addFiles(urls: [outputURL], autoSelect: true)
                     completion()
                 }
@@ -1303,7 +1303,7 @@ class AppState: ObservableObject {
     func resizeImage() {
         let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
         guard !imgs.isEmpty else {
-            logWarning("Vyber alespoň jeden obrázek pro změnu velikosti")
+            logWarning("Select at least one image to resize")
             return
         }
         resizeDialogFiles = imgs
@@ -1313,7 +1313,7 @@ class AppState: ObservableObject {
     func resizePDF() {
         let pdfs = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
         guard !pdfs.isEmpty else {
-            logWarning("Vyber alespoň jeden PDF soubor pro změnu velikosti")
+            logWarning("Select at least one PDF file to resize")
             return
         }
         resizeDialogFiles = pdfs
@@ -1323,7 +1323,7 @@ class AppState: ObservableObject {
     func resizeFiles() {
         let sel = files.filter { selectedFiles.contains($0.id) }
         guard !sel.isEmpty else {
-            logWarning("Vyber soubory pro změnu velikosti")
+            logWarning("Select files to resize")
             return
         }
         resizeDialogFiles = sel
@@ -1543,7 +1543,7 @@ class AppState: ObservableObject {
             let authenticated = await GoogleOAuthManager.shared.isAuthenticated
             guard authenticated else {
                 await MainActor.run {
-                    self.logError("Nejste přihlášeni k Google. Přihlaste se v Nastavení → Google.")
+                    self.logError("Not signed in to Google. Sign in via Settings → Google.")
                 }
                 return
             }
@@ -1720,7 +1720,7 @@ class AppState: ObservableObject {
     /// zobrazí panel "Uložit jako" a nechá uživatele vybrat umístění.
     func handleOperationError(_ error: Error, operationDescription: String) {
         if case PDFError.writeFailedWithFallback(_, let data, let suggestedName) = error {
-            logWarning("Zápis selhal – vyberte jiné umístění pro '\(suggestedName)'")
+            logWarning("Write failed – choose a different location for '\(suggestedName)'")
             offerSaveAsDialog(data: data, suggestedName: suggestedName)
         } else {
             logError("\(operationDescription): \(error.localizedDescription)")
@@ -1739,12 +1739,12 @@ class AppState: ObservableObject {
             do {
                 try data.write(to: url)
                 DispatchQueue.main.async {
-                    self.logSuccess("Soubor uložen: \(url.lastPathComponent)")
+                    self.logSuccess("File saved: \(url.lastPathComponent)")
                     self.addFiles(urls: [url], autoSelect: true)
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.logError("Zápis do zvoleného umístění selhal: \(error.localizedDescription)")
+                    self.logError("Write to chosen location failed: \(error.localizedDescription)")
                 }
             }
         }

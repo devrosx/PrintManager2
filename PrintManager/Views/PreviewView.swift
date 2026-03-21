@@ -357,12 +357,12 @@ struct DebugOutputView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Debug Output")
+                Text("Výstup ladění")
                     .font(.headline)
-                
+
                 Spacer()
-                
-                Toggle("Auto-scroll", isOn: $autoScroll)
+
+                Toggle("Automatické rolování", isOn: $autoScroll)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                 

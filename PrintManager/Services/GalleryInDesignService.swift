@@ -136,13 +136,38 @@ class GalleryInDesignService {
 
         // frameBorderWidth je v pt; InDesign s mm-jednotkami bere strokeWeight v mm
         let borderWidthMM = settings.frameBorderWidth / 2.834645669
+        let (brdC, brdM, brdY, brdK) = cmyk(settings.frameBorderColor)
         let addBorderInLoop = settings.addFrameBorder ? """
-                    frame.strokeColor = doc.swatches.itemByName("Black");
+                    try {
+                        var brdSwatch = doc.colors.add();
+                        brdSwatch.model = ColorModel.PROCESS;
+                        brdSwatch.colorValue = [\(f(brdC)), \(f(brdM)), \(f(brdY)), \(f(brdK))];
+                        frame.strokeColor = brdSwatch;
+                    } catch(e) { frame.strokeColor = doc.swatches.itemByName("Black"); }
                     frame.strokeWeight = \(f(borderWidthMM));
 """ : """
                     frame.strokeColor = doc.swatches.itemByName("None");
                     frame.strokeWeight = 0;
 """
+
+        // Stín za rámečkem
+        let (shC, shM, shY, shK) = cmyk(settings.shadowColor)
+        let addShadowInLoop = settings.addFrameShadow ? """
+                    // Stín za rámečkem
+                    try {
+                        frame.transparencySettings.dropShadowSetting.applied = true;
+                        frame.transparencySettings.dropShadowSetting.opacity  = \(f(settings.shadowOpacity));
+                        frame.transparencySettings.dropShadowSetting.xOffset  = \(f(settings.shadowOffsetX));
+                        frame.transparencySettings.dropShadowSetting.yOffset  = \(f(settings.shadowOffsetY));
+                        frame.transparencySettings.dropShadowSetting.size     = \(f(settings.shadowBlur));
+                        try {
+                            var shSwatch = doc.colors.add();
+                            shSwatch.model = ColorModel.PROCESS;
+                            shSwatch.colorValue = [\(f(shC)), \(f(shM)), \(f(shY)), \(f(shK))];
+                            frame.transparencySettings.dropShadowSetting.color = shSwatch;
+                        } catch(e) {}
+                    } catch(e) {}
+""" : ""
 
         // Popisek – textový rámeček pod obrázkem
         let labelH      = settings.effectiveLabelHeightMM   // 0 pokud inside
@@ -190,6 +215,25 @@ class GalleryInDesignService {
         // Řádkový krok = FRAME_H + labelH (pro správné fy)
         let cellH = frameH + labelH
 
+        // Barva pozadí stránky
+        let (pgBgC, pgBgM, pgBgY, pgBgK) = cmyk(settings.pageBackgroundColor)
+        let bgNS = NSColor(settings.pageBackgroundColor).usingColorSpace(.sRGB)
+        let isWhite = bgNS.map { abs($0.redComponent - 1) < 0.01 && abs($0.greenComponent - 1) < 0.01 && abs($0.blueComponent - 1) < 0.01 && $0.alphaComponent > 0.99 } ?? true
+        let pageBackgroundJS = isWhite ? "" : """
+        // Barva pozadí stránky
+        try {
+            var pgBgSwatch = doc.colors.add();
+            pgBgSwatch.model = ColorModel.PROCESS;
+            pgBgSwatch.colorValue = [\(f(pgBgC)), \(f(pgBgM)), \(f(pgBgY)), \(f(pgBgK))];
+            var pgRect = page.rectangles.add();
+            pgRect.geometricBounds = ["0mm", "0mm", PAPER_H+"mm", PAPER_W+"mm"];
+            pgRect.fillColor = pgBgSwatch;
+            pgRect.strokeColor = doc.swatches.itemByName("None");
+            pgRect.strokeWeight = 0;
+            pgRect.sendToBack();
+        } catch(e) {}
+"""
+
         return """
 // PrintManager — InDesign Gallery (\(outputName))
 app.scriptPreferences.userInteractionLevel = UserInteractionLevels.INTERACT_WITH_ALERTS;
@@ -222,6 +266,7 @@ for (var pg = 0; pg < NUM_PAGES; pg++) {
         doc.pages.add(LocationOptions.AT_END);
         page = doc.pages[doc.pages.length - 1];
     }
+\(pageBackgroundJS)
 
     for (var row = 0; row < ROWS && imgIdx < IMAGES.length; row++) {
         for (var col = 0; col < COLS && imgIdx < IMAGES.length; col++) {
@@ -274,6 +319,7 @@ for (var pg = 0; pg < NUM_PAGES; pg++) {
             }
 
 \(addBorderInLoop)
+\(addShadowInLoop)
 \(addCropMarksInLoop)
 \(addLabelInLoop)
             imgIdx++;

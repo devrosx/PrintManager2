@@ -331,7 +331,8 @@
 "Convert" = "Convert";
 "Compress" = "Compress";
 "Uložit \(actualCount) fotografií" = "Save \(actualCount) photos";
-"Auto-scroll" = "Auto-scroll";
+"Výstup ladění" = "Debug Output";
+"Automatické rolování" = "Auto-scroll";
 "Toggle thumbnails" = "Toggle thumbnails";
 "Close Quick Look" = "Close Quick Look";
 "Close inline Quick Look" = "Close inline Quick Look";

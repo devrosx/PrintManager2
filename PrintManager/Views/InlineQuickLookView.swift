@@ -329,12 +329,38 @@ struct InlineQuickLookView: View {
                             }
                             .onDrag {
                                 draggedPage = pageIndex
+                                let pagesToDrag: [Int]
                                 if selectedPages.contains(pageIndex) {
+                                    pagesToDrag = Array(selectedPages).sorted()
                                     draggedPages = selectedPages
                                 } else {
+                                    pagesToDrag = [pageIndex]
                                     draggedPages = [pageIndex]
                                 }
-                                return NSItemProvider(object: "\(pageIndex)" as NSString)
+
+                                let provider = NSItemProvider(object: "\(pageIndex)" as NSString)
+
+                                // Registrace PDF pro drag na plochu/Finder
+                                if file.fileType == .pdf {
+                                    let capturedFile = file
+                                    let capturedPages = pagesToDrag
+                                    provider.registerFileRepresentation(
+                                        forTypeIdentifier: "com.adobe.pdf",
+                                        fileOptions: [],
+                                        visibility: .all
+                                    ) { completion in
+                                        DispatchQueue.global(qos: .userInitiated).async {
+                                            if let tempURL = try? InlineQuickLookView.makeTempPDF(file: capturedFile, pages: capturedPages) {
+                                                completion(tempURL, false, nil)
+                                            } else {
+                                                completion(nil, false, nil)
+                                            }
+                                        }
+                                        return nil
+                                    }
+                                }
+
+                                return provider
                             } preview: {
                                 DragPreviewBadge(
                                     thumbnail: thumbnails[pageIndex],
@@ -528,6 +554,16 @@ struct InlineQuickLookView: View {
     private func pageContextMenu(for pageIndex: Int, file: FileItem) -> some View {
         let pagesToProcess = selectedPages.isEmpty ? [pageIndex] : Array(selectedPages).sorted()
 
+        // Invertovat výběr
+        Button {
+            let allPages = Set(0..<file.pageCount)
+            selectedPages = allPages.subtracting(selectedPages.isEmpty ? [pageIndex] : selectedPages)
+        } label: {
+            Label("Invertovat výběr", systemImage: "arrow.2.squarepath")
+        }
+
+        Divider()
+
         Button {
             rotatePagesClockwise(pages: pagesToProcess, file: file)
         } label: {
@@ -684,6 +720,19 @@ struct InlineQuickLookView: View {
                 }
             }
             let pi = NSPrintInfo.shared.copy() as! NSPrintInfo
+            // Nastav tiskárnu vybranou v levém panelu
+            let selectedPrinter = appState.selectedPrinter
+            if !selectedPrinter.isEmpty {
+                if let p = NSPrinter(name: selectedPrinter) {
+                    pi.printer = p
+                } else {
+                    let lower = selectedPrinter.lowercased()
+                    if let match = NSPrinter.printerNames.first(where: { $0.lowercased() == lower }),
+                       let p = NSPrinter(name: match) {
+                        pi.printer = p
+                    }
+                }
+            }
             guard let op = printDoc.printOperation(for: pi, scalingMode: .pageScaleToFit, autoRotate: true) else { return }
             op.showsPrintPanel = true
             op.showsProgressPanel = true
@@ -939,6 +988,40 @@ struct InlineQuickLookView: View {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
         }
+    }
+
+    // MARK: - Temp PDF pro drag na Finder/plochu
+
+    /// Vytvoří dočasné PDF z vybraných stránek a vrátí jeho URL.
+    /// Volá se synchronně na background threadu z registerFileRepresentation.
+    static func makeTempPDF(file: FileItem, pages: [Int]) throws -> URL {
+        guard let sourceDoc = PDFDocument(url: file.url) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        let newDoc = PDFDocument()
+        for (newIdx, pageIdx) in pages.enumerated() {
+            if let page = sourceDoc.page(at: pageIdx) {
+                newDoc.insert(page, at: newIdx)
+            }
+        }
+
+        let pageLabel: String
+        if pages.count == 1 {
+            pageLabel = "strana\(pages[0] + 1)"
+        } else {
+            let first = pages.first.map { String($0 + 1) } ?? ""
+            let last  = pages.last.map  { String($0 + 1) } ?? ""
+            pageLabel = "strany\(first)-\(last)"
+        }
+
+        let fileName = "\(file.name)_\(pageLabel).pdf"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+
+        guard newDoc.write(to: tempURL) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return tempURL
     }
 }
 

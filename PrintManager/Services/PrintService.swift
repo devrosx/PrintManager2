@@ -59,11 +59,22 @@ class PrintService {
     // MARK: - Helpers
 
     private func buildPrintInfo(settings: PrintSettings) -> NSPrintInfo {
-        let pi = NSPrintInfo()
+        // Kopie shared info — lepší základ než NSPrintInfo() (zachová papír atd.)
+        let pi = NSPrintInfo.shared.copy() as! NSPrintInfo
 
-        // Tiskárna
-        if !settings.printer.isEmpty, let p = NSPrinter(name: settings.printer) {
-            pi.printer = p
+        // Tiskárna — nastav pokud je zvolena
+        if !settings.printer.isEmpty {
+            // Primárně přes NSPrinter
+            if let p = NSPrinter(name: settings.printer) {
+                pi.printer = p
+            } else {
+                // Fallback: jméno mohlo přijít z lpstat s jiným casem — zkus prefix-match
+                let lower = settings.printer.lowercased()
+                if let match = NSPrinter.printerNames.first(where: { $0.lowercased() == lower }),
+                   let p = NSPrinter(name: match) {
+                    pi.printer = p
+                }
+            }
         }
 
         // Papír a orientace

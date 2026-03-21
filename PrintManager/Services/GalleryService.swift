@@ -74,6 +74,15 @@ class GalleryService {
 
             ctx.beginPDFPage(nil)
 
+            // Barva pozadí stránky
+            let bgNS = NSColor(settings.pageBackgroundColor)
+            if bgNS != NSColor.white && bgNS.alphaComponent > 0.01 {
+                ctx.saveGState()
+                ctx.setFillColor(bgNS.cgColor)
+                ctx.fill(CGRect(x: 0, y: 0, width: paperW, height: paperH))
+                ctx.restoreGState()
+            }
+
             // Nastavíme souřadnicový systém: (0,0) = levý dolní roh
             // CoreGraphics má (0,0) vlevo dole, takže mapujeme y = paperH - y_top
 
@@ -91,6 +100,24 @@ class GalleryService {
                 let imageY  = cellBottomY + labelH_pt
                 let imageRect = CGRect(x: cellX, y: imageY, width: frameW, height: frameH)
                 let labelRect = CGRect(x: cellX, y: cellBottomY, width: frameW, height: labelH_pt)
+
+                // Stín za rámečkem (kreslíme před obrázkem – painter's model)
+                if settings.addFrameShadow {
+                    let alpha = settings.shadowOpacity / 100.0
+                    if let shadowNS = NSColor(settings.shadowColor).usingColorSpace(.sRGB) {
+                        let shadowCG = shadowNS.withAlphaComponent(alpha).cgColor
+                        ctx.saveGState()
+                        ctx.setShadow(
+                            offset: CGSize(width:  settings.shadowOffsetX * pt,
+                                           height: -settings.shadowOffsetY * pt),
+                            blur: settings.shadowBlur * pt,
+                            color: shadowCG
+                        )
+                        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+                        ctx.fill(imageRect)
+                        ctx.restoreGState()
+                    }
+                }
 
                 renderImage(imgState, into: imageRect, settings: settings, ctx: ctx)
 
@@ -174,17 +201,24 @@ class GalleryService {
         let effW = swapsDims ? imgH : imgW
         let effH = swapsDims ? imgW : imgH
 
-        // Měřítko: fit = celý obrázek viditelný, fill = pokryje celou buňku
-        let scale: Double = state.fitMode
+        // Měřítko: fit = celý obrázek viditelný, fill = pokryje celou buňku; aplikujeme zoom
+        let baseScaleVal: Double = state.fitMode
             ? min(cell.width / effW, cell.height / effH)
             : max(cell.width / effW, cell.height / effH)
+        let scale = baseScaleVal * state.zoom
 
         let drawW = imgW * scale
         let drawH = imgH * scale
 
-        // Pan offset — v fit módu vždy nula
-        let panX = state.fitMode ? 0.0 : Double(state.panOffset.width)
-        let panY = state.fitMode ? 0.0 : Double(state.panOffset.height)
+        // Pan offset: model ukládá normalizovanou frakci (±1) → převod na PDF body.
+        // fRendW/H = vizuální rozměry obrázku v souřadnicích rámečku (po rotaci)
+        let fRendW = swapsDims ? drawH : drawW
+        let fRendH = swapsDims ? drawW : drawH
+        let maxPanX = max(0, (fRendW - cell.width)  / 2)
+        let maxPanY = max(0, (fRendH - cell.height) / 2)
+        // SwiftUI: +height = dolů; CoreGraphics PDF: +y = nahoru → negujeme Y
+        let panX = state.fitMode ? 0.0 :  state.panOffset.width  * maxPanX
+        let panY = state.fitMode ? 0.0 : -(state.panOffset.height * maxPanY)
 
         ctx.saveGState()
         ctx.clip(to: cell)
@@ -208,7 +242,7 @@ class GalleryService {
         if settings.addFrameBorder {
             ctx.saveGState()
             ctx.setLineWidth(settings.frameBorderWidth)
-            ctx.setStrokeColor(CGColor(gray: 0, alpha: 1))
+            ctx.setStrokeColor(NSColor(settings.frameBorderColor).cgColor)
             ctx.stroke(cell)
             ctx.restoreGState()
         }

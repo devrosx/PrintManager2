@@ -140,9 +140,23 @@ struct GalleryDialog: View {
     @AppStorage("gallery.labelSize")    private var labelFontSize:   Double = 9
     @AppStorage("gallery.labelAlign")   private var labelAlignRaw:   String = GalleryLabelAlignment.center.rawValue
     @AppStorage("gallery.resample")     private var resampleImages:  Bool   = true
+    @AppStorage("gallery.shadow")       private var addFrameShadow:  Bool   = false
+    @AppStorage("gallery.shadowX")      private var shadowOffsetX:   Double = 2.0
+    @AppStorage("gallery.shadowY")      private var shadowOffsetY:   Double = 2.0
+    @AppStorage("gallery.shadowBlur")   private var shadowBlur:      Double = 3.0
+    @AppStorage("gallery.shadowOp")     private var shadowOpacity:   Double = 50.0
 
     @State private var labelColor:        Color  = .black
     @State private var labelBackground:   Color  = .clear
+    @State private var borderColor:       Color  = .black
+    @State private var pageBackground:    Color  = .white
+    @State private var shadowColor:       Color  = .black
+
+    // Předvolby
+    @State private var presets:           [GalleryPresetData] = []
+    @State private var selectedPresetID:  UUID?               = nil
+    @State private var showSaveSheet:     Bool                = false
+    @State private var newPresetName:     String              = ""
 
     @State private var imageStates:      [GalleryImageState] = []
     @State private var isProcessing:     Bool   = false
@@ -172,6 +186,12 @@ struct GalleryDialog: View {
             addCropMarks: addCropMarks, cropMarkLength: cropMarkLen,
             cropMarkOffset: cropMarkOff, cropMarkWidth: cropMarkW,
             addFrameBorder: addFrameBorder, frameBorderWidth: borderWidth,
+            frameBorderColor: borderColor,
+            pageBackgroundColor: pageBackground,
+            addFrameShadow: addFrameShadow,
+            shadowOffsetX: shadowOffsetX, shadowOffsetY: shadowOffsetY,
+            shadowBlur: shadowBlur, shadowOpacity: shadowOpacity,
+            shadowColor: shadowColor,
             fillPageEvenly: fillPageEvenly,
             autoFillPage: autoFillPage,
             showImageLabel: showImageLabel, labelInside: labelInside,
@@ -243,7 +263,7 @@ struct GalleryDialog: View {
             savedWidth  = size.width
             savedHeight = size.height
         })
-        .onAppear { loadImageStates() }
+        .onAppear { loadImageStates(); loadPresets() }
         .onChange(of: paperSizeRaw)   { _ in clampPreviewPage() }
         .onChange(of: orientationRaw) { _ in clampPreviewPage() }
         .onChange(of: frameSizeRaw)   { _ in clampPreviewPage() }
@@ -309,6 +329,80 @@ struct GalleryDialog: View {
     private var settingsPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+
+                // ── Předvolby ───────────────────────────────────────────────
+                GroupBox("Předvolby") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Menu {
+                                if presets.isEmpty {
+                                    Text("Žádné předvolby").foregroundColor(.secondary)
+                                } else {
+                                    ForEach(presets) { preset in
+                                        Button {
+                                            applyPreset(preset)
+                                            selectedPresetID = preset.id
+                                        } label: {
+                                            HStack {
+                                                Text(preset.name)
+                                                if selectedPresetID == preset.id {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    let name = presets.first(where: { $0.id == selectedPresetID })?.name ?? "— vybrat —"
+                                    Text(name).font(.caption)
+                                    Image(systemName: "chevron.down").font(.caption2)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(Color(NSColor.controlBackgroundColor)))
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(NSColor.separatorColor), lineWidth: 0.5))
+                        }
+
+                        HStack(spacing: 6) {
+                            // Uložit jako… / Přepsat
+                            if showSaveSheet {
+                                TextField("Název předvolby", text: $newPresetName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(maxWidth: .infinity)
+                                Button("Uložit") {
+                                    guard !newPresetName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                                    savePresetAs(name: newPresetName.trimmingCharacters(in: .whitespaces))
+                                    showSaveSheet = false; newPresetName = ""
+                                }
+                                .buttonStyle(.bordered).controlSize(.small)
+                                Button("Zrušit") { showSaveSheet = false; newPresetName = "" }
+                                    .buttonStyle(.borderless).controlSize(.small)
+                            } else {
+                                if let selID = selectedPresetID, presets.contains(where: { $0.id == selID }) {
+                                    Button("Přepsat") { overwritePreset(id: selID) }
+                                        .buttonStyle(.bordered).controlSize(.small)
+                                }
+                                Button("Uložit jako…") {
+                                    let baseName = presets.first(where: { $0.id == selectedPresetID })?.name ?? ""
+                                    newPresetName = baseName
+                                    showSaveSheet = true
+                                }
+                                .buttonStyle(.bordered).controlSize(.small)
+                                if let selID = selectedPresetID, presets.contains(where: { $0.id == selID }) {
+                                    Button(role: .destructive) { deletePreset(id: selID) } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .buttonStyle(.borderless).controlSize(.small)
+                                    .help("Smazat vybranou předvolbu")
+                                }
+                            }
+                            Spacer()
+                        }
+                    }.padding(.vertical, 4)
+                }
 
                 GroupBox("Papír") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -465,6 +559,59 @@ struct GalleryDialog: View {
                                 TextField("", value: $borderWidth, format: .number)
                                     .textFieldStyle(.roundedBorder).frame(width: 44)
                                 Text("pt").foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 4) {
+                                Text("Barva").frame(width: 70, alignment: .leading)
+                                ColorPicker("", selection: $borderColor, supportsOpacity: false)
+                                    .labelsHidden().frame(width: 28, height: 24)
+                            }
+                        }
+                    }.padding(.vertical, 4)
+                }
+
+                GroupBox("Pozadí stránky") {
+                    HStack(spacing: 8) {
+                        Text("Barva pozadí").foregroundColor(.secondary).font(.caption)
+                        ColorPicker("", selection: $pageBackground, supportsOpacity: false)
+                            .labelsHidden().frame(width: 28, height: 24)
+                        Button("Bílá") { pageBackground = .white }
+                            .buttonStyle(.borderless).font(.caption).foregroundColor(.secondary)
+                    }.padding(.vertical, 4)
+                }
+
+                GroupBox("Stín za obrázkem") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Přidat stín", isOn: $addFrameShadow)
+                        if addFrameShadow {
+                            HStack(spacing: 4) {
+                                Text("Posun X").frame(width: 70, alignment: .leading)
+                                TextField("", value: $shadowOffsetX, format: .number)
+                                    .textFieldStyle(.roundedBorder).frame(width: 44)
+                                Text("mm").foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 4) {
+                                Text("Posun Y").frame(width: 70, alignment: .leading)
+                                TextField("", value: $shadowOffsetY, format: .number)
+                                    .textFieldStyle(.roundedBorder).frame(width: 44)
+                                Text("mm").foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 4) {
+                                Text("Rozptyl").frame(width: 70, alignment: .leading)
+                                TextField("", value: $shadowBlur, format: .number)
+                                    .textFieldStyle(.roundedBorder).frame(width: 44)
+                                Text("mm").foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 4) {
+                                Text("Krytí").frame(width: 70, alignment: .leading)
+                                Slider(value: $shadowOpacity, in: 0...100)
+                                    .frame(width: 80)
+                                Text("\(Int(shadowOpacity)) %")
+                                    .foregroundColor(.secondary).frame(width: 34, alignment: .trailing)
+                            }
+                            HStack(spacing: 4) {
+                                Text("Barva").frame(width: 70, alignment: .leading)
+                                ColorPicker("", selection: $shadowColor, supportsOpacity: false)
+                                    .labelsHidden().frame(width: 28, height: 24)
                             }
                         }
                     }.padding(.vertical, 4)
@@ -654,6 +801,104 @@ struct GalleryDialog: View {
         }
     }
 
+    // MARK: Preset helpers
+
+    private func loadPresets() {
+        guard let data = UserDefaults.standard.data(forKey: "gallery.presets"),
+              let decoded = try? JSONDecoder().decode([GalleryPresetData].self, from: data)
+        else { presets = []; return }
+        presets = decoded
+    }
+
+    private func persistPresets() {
+        if let data = try? JSONEncoder().encode(presets) {
+            UserDefaults.standard.set(data, forKey: "gallery.presets")
+        }
+    }
+
+    private func savePresetAs(name: String) {
+        var p = collectPreset(name: name)
+        // Pokud existuje preset se stejným názvem, přepíšeme ho
+        if let idx = presets.firstIndex(where: { $0.name == name }) {
+            p.id = presets[idx].id
+            presets[idx] = p
+        } else {
+            presets.append(p)
+        }
+        selectedPresetID = p.id
+        persistPresets()
+    }
+
+    private func overwritePreset(id: UUID) {
+        guard let idx = presets.firstIndex(where: { $0.id == id }) else { return }
+        var p = collectPreset(name: presets[idx].name)
+        p.id = id
+        presets[idx] = p
+        persistPresets()
+    }
+
+    private func deletePreset(id: UUID) {
+        presets.removeAll { $0.id == id }
+        if selectedPresetID == id { selectedPresetID = nil }
+        persistPresets()
+    }
+
+    private func collectPreset(name: String) -> GalleryPresetData {
+        var p = GalleryPresetData(name: name)
+        p.paperSizeRaw   = paperSizeRaw;    p.orientationRaw = orientationRaw
+        p.customPaperW   = customPaperW;    p.customPaperH   = customPaperH
+        p.frameSizeRaw   = frameSizeRaw
+        p.customFrameW   = customFrameW;    p.customFrameH   = customFrameH
+        p.marginTop      = marginTop;       p.marginBottom   = marginBottom
+        p.marginLeft     = marginLeft;      p.marginRight    = marginRight
+        p.gutterH        = gutterH;         p.gutterV        = gutterV
+        p.addCropMarks   = addCropMarks
+        p.cropMarkLen    = cropMarkLen;     p.cropMarkOff    = cropMarkOff
+        p.cropMarkW      = cropMarkW
+        p.addFrameBorder = addFrameBorder;  p.borderWidth    = borderWidth
+        p.borderColorHex = galleryColorToHex(borderColor)
+        p.addFrameShadow = addFrameShadow
+        p.shadowOffsetX  = shadowOffsetX;   p.shadowOffsetY  = shadowOffsetY
+        p.shadowBlur     = shadowBlur;      p.shadowOpacity  = shadowOpacity
+        p.shadowColorHex = galleryColorToHex(shadowColor)
+        p.pageBackgroundHex = galleryColorToHex(pageBackground)
+        p.fillPageEvenly = fillPageEvenly;  p.autoFillPage   = autoFillPage
+        p.showImageLabel = showImageLabel;  p.labelInside    = labelInside
+        p.labelFontName  = labelFontName;   p.labelFontSize  = labelFontSize
+        p.labelAlignRaw  = labelAlignRaw
+        p.labelColorHex      = galleryColorToHex(labelColor)
+        p.labelBackgroundHex = galleryColorToHex(labelBackground)
+        p.resampleImages = resampleImages
+        return p
+    }
+
+    private func applyPreset(_ p: GalleryPresetData) {
+        paperSizeRaw   = p.paperSizeRaw;    orientationRaw = p.orientationRaw
+        customPaperW   = p.customPaperW;    customPaperH   = p.customPaperH
+        frameSizeRaw   = p.frameSizeRaw
+        customFrameW   = p.customFrameW;    customFrameH   = p.customFrameH
+        marginTop      = p.marginTop;       marginBottom   = p.marginBottom
+        marginLeft     = p.marginLeft;      marginRight    = p.marginRight
+        gutterH        = p.gutterH;         gutterV        = p.gutterV
+        addCropMarks   = p.addCropMarks
+        cropMarkLen    = p.cropMarkLen;     cropMarkOff    = p.cropMarkOff
+        cropMarkW      = p.cropMarkW
+        addFrameBorder = p.addFrameBorder;  borderWidth    = p.borderWidth
+        borderColor    = galleryColorFromHex(p.borderColorHex)
+        addFrameShadow = p.addFrameShadow
+        shadowOffsetX  = p.shadowOffsetX;   shadowOffsetY  = p.shadowOffsetY
+        shadowBlur     = p.shadowBlur;      shadowOpacity  = p.shadowOpacity
+        shadowColor    = galleryColorFromHex(p.shadowColorHex)
+        pageBackground = galleryColorFromHex(p.pageBackgroundHex)
+        fillPageEvenly = p.fillPageEvenly;  autoFillPage   = p.autoFillPage
+        showImageLabel = p.showImageLabel;  labelInside    = p.labelInside
+        labelFontName  = p.labelFontName;   labelFontSize  = p.labelFontSize
+        labelAlignRaw  = p.labelAlignRaw
+        labelColor     = galleryColorFromHex(p.labelColorHex)
+        labelBackground = galleryColorFromHex(p.labelBackgroundHex)
+        resampleImages = p.resampleImages
+    }
+
     private func createInDesignGallery() {
         let name = imageFiles.first.map { $0.url.deletingPathExtension().lastPathComponent } ?? "Gallery"
         isIDProcessing = true
@@ -713,9 +958,9 @@ struct GalleryPagePreview: View {
         }
 
         ZStack {
-            // Bílá stránka
+            // Pozadí stránky
             Rectangle()
-                .fill(Color.white)
+                .fill(settings.pageBackgroundColor)
                 .frame(width: pageW, height: pageH)
                 .shadow(color: .black.opacity(0.25), radius: 6, x: 3, y: 3)
                 .overlay(alignment: .topLeading) {
@@ -752,7 +997,13 @@ struct GalleryPagePreview: View {
                                 },
                                 borderEnabled: settings.addFrameBorder,
                                 borderWidth:   settings.frameBorderWidth,
-                                borderColor:   settings.frameBorderColor
+                                borderColor:   settings.frameBorderColor,
+                                shadowEnabled: settings.addFrameShadow,
+                                shadowOffsetX: settings.shadowOffsetX * Double(scale),
+                                shadowOffsetY: settings.shadowOffsetY * Double(scale),
+                                shadowBlurPx:  settings.shadowBlur    * Double(scale),
+                                shadowOpacity: settings.shadowOpacity / 100.0,
+                                shadowColor:   settings.shadowColor
                             )
                             .frame(width: rect.width, height: rect.height)
                             .offset(x: rect.minX, y: rect.minY)
@@ -934,6 +1185,12 @@ struct GalleryFrameView: View {
     var borderEnabled: Bool  = false
     var borderWidth:   Double = 0.5
     var borderColor:   Color  = .black
+    var shadowEnabled: Bool  = false
+    var shadowOffsetX: Double = 2.0   // screen px
+    var shadowOffsetY: Double = 2.0   // screen px
+    var shadowBlurPx:  Double = 3.0   // screen px
+    var shadowOpacity: Double = 0.5
+    var shadowColor:   Color  = .black
 
     @State private var lastPan:    CGSize  = .zero
     @State private var loadedImg:  NSImage? = nil
@@ -991,13 +1248,40 @@ struct GalleryFrameView: View {
         )
     }
 
-    /// Ořeže pan tak, aby obrázek nikdy nevytvořil bílé místo
+    /// Ořeže pan tak, aby obrázek nikdy nevytvořil bílé místo (screen-space)
     private func clamped(_ pan: CGSize) -> CGSize {
         let m = maxPan
         return CGSize(
             width:  m.width  > 0 ? max(-m.width,  min(m.width,  pan.width))  : 0,
             height: m.height > 0 ? max(-m.height, min(m.height, pan.height)) : 0
         )
+    }
+
+    /// Zobrazovací posun v screen pixelech z normalizovaného panOffset (frakce × maxPan)
+    private var screenPanOffset: CGSize {
+        let m = maxPan
+        return CGSize(width: state.panOffset.width * m.width,
+                      height: state.panOffset.height * m.height)
+    }
+
+    /// Převede screen-space posun na normalizovaný (frakce maxPanu, rozsah ±1)
+    private func normalizedPan(fromScreen screenPan: CGSize) -> CGSize {
+        let m = maxPan
+        return CGSize(
+            width:  m.width  > 0 ? max(-1, min(1, screenPan.width  / m.width))  : 0,
+            height: m.height > 0 ? max(-1, min(1, screenPan.height / m.height)) : 0
+        )
+    }
+
+    /// Podíl obrázku skrytý ořezem (0 = nic, 1 = vše). Relevantní jen ve fill módu.
+    private var hiddenFraction: Double {
+        guard !state.fitMode else { return 0 }
+        let r = rendered
+        let f = frameSize
+        if r.width <= f.width && r.height <= f.height { return 0 }
+        let visible = min(r.width, f.width) * min(r.height, f.height)
+        let total   = r.width * r.height
+        return max(0, 1.0 - Double(visible / total))
     }
 
     // MARK: Body
@@ -1014,11 +1298,18 @@ struct GalleryFrameView: View {
                     .resizable()
                     .frame(width: natural.width * s, height: natural.height * s)
                     .rotationEffect(.degrees(totalRotDeg))
-                    .offset(state.panOffset)
+                    .offset(screenPanOffset)
             }
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .clipped()
+        // Stín za rámečkem
+        .shadow(
+            color: shadowEnabled ? shadowColor.opacity(shadowOpacity) : .clear,
+            radius: CGFloat(shadowBlurPx / 2),
+            x: CGFloat(shadowOffsetX),
+            y: CGFloat(shadowOffsetY)
+        )
         // Linka okolo rámečku z nastavení (addFrameBorder)
         .overlay(alignment: .center) {
             if borderEnabled {
@@ -1032,6 +1323,29 @@ struct GalleryFrameView: View {
                 lineWidth: isActive ? 2 : 0
             )
         )
+        // Vizualizace přesahu: šedý průhledný overlay na ořezaných částech obrázku
+        .overlay(alignment: .center) {
+            if isActive && !state.fitMode, let img = loadedImg,
+               rendered.width > frameSize.width + 1 || rendered.height > frameSize.height + 1 {
+                let s   = baseScale * CGFloat(state.zoom)
+                let spx = screenPanOffset
+                ZStack {
+                    // Celý obrázek bez ořezu
+                    Image(nsImage: img)
+                        .resizable()
+                        .frame(width: natural.width * s, height: natural.height * s)
+                        .rotationEffect(.degrees(totalRotDeg))
+                        .offset(spx)
+                    // „Okno" rámečku – průhledné dírkování, aby se přesah zobrazil jen vně
+                    Rectangle()
+                        .frame(width: frameSize.width, height: frameSize.height)
+                        .blendMode(.destinationOut)
+                }
+                .opacity(0.3)
+                .compositingGroup()
+                .allowsHitTesting(false)
+            }
+        }
         // Transparentní tap vrstva — aktivuje rámeček (pod sliderem a tlačítky)
         .overlay {
             Color.clear
@@ -1044,9 +1358,9 @@ struct GalleryFrameView: View {
                 GalleryZoomSlider(zoom: Binding(
                     get: { state.zoom },
                     set: { z in
-                        state.zoom      = z
-                        state.panOffset = clamped(state.panOffset)
-                        lastPan         = state.panOffset
+                        state.zoom = z
+                        // panOffset je normalizovaná frakce → vždy platná; jen přepočteme lastPan
+                        lastPan = screenPanOffset
                     }
                 ))
             }
@@ -1060,6 +1374,15 @@ struct GalleryFrameView: View {
                         .labelsHidden()
                         .frame(width: 20, height: 20)
                         .help("Barva pozadí rámečku")
+                }
+                // Výstraha: velký ořez (> 15 % obrázku schováno)
+                if hiddenFraction > 0.15 {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.yellow)
+                        .padding(4)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.45)))
+                        .help("Ořezáno \(Int(hiddenFraction * 100)) % obrázku")
                 }
                 // Rotace o 90° CW
                 frameIconButton(
@@ -1122,9 +1445,9 @@ struct GalleryFrameView: View {
                         width:  lastPan.width  + val.translation.width,
                         height: lastPan.height + val.translation.height
                     )
-                    state.panOffset = clamped(proposed)
+                    state.panOffset = normalizedPan(fromScreen: clamped(proposed))
                 }
-                .onEnded { _ in lastPan = state.panOffset }
+                .onEnded { _ in lastPan = screenPanOffset }
         )
         .onAppear { loadThumbnail() }
     }
