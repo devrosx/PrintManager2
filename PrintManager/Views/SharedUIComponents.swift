@@ -292,17 +292,20 @@ func imageActionsMenuContent(_ appState: AppState) -> some View {
     Divider()
     Button("Expand (Bleed)…")             { appState.expandFileAction() }
     Divider()
-    Button("Invert Colors")               { appState.invertImage() }
     Button("Convert to Gray")             { appState.convertToGray() }
     Divider()
     Button("Resize Image…")               { appState.resizeImage() }
     Button("Rotate Image")                { appState.rotateImage() }
     Divider()
-    Button("Extract Images from PDF")     { appState.extractImagesFromPDF() }
+    if appState.files.filter({ appState.selectedFiles.contains($0.id) && $0.fileType == .pdf }).count >= 1 {
+        Button("Extract Images from PDF") { appState.extractImagesFromPDF() }
+    }
     Button("Detect & Extract Sub-Images") { appState.detectAndExtractImages() }
     Divider()
     Button("Adjust Image…")               { appState.openImageAdjustDialog() }
-    Button("Stitch (Panorama)…")          { appState.openStitchDialog() }
+    if appState.files.filter({ appState.selectedFiles.contains($0.id) && $0.fileType.isImage }).count >= 2 {
+        Button("Stitch (Panorama)…")      { appState.openStitchDialog() }
+    }
     Divider()
     Button("Create Gallery…")             { appState.openGalleryDialog() }
 }

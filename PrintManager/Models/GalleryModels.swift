@@ -146,6 +146,21 @@ enum GalleryLabelAlignment: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Image Effect
+
+enum GalleryImageEffect: String, CaseIterable, Identifiable {
+    case none      = "Žádný"
+    case vivid     = "Vivid"
+    case grayscale = "Černobílá"
+    case sepia     = "Sépia"
+    case oldPhoto  = "Stará fotografie"
+    case faded     = "Vybledlá"
+    case coolTone  = "Chladné tóny"
+    case duotone   = "Duotone"
+
+    var id: String { rawValue }
+}
+
 // MARK: - Crop Marks Style (stejné jako u Imposition)
 
 enum GalleryCropMarkStyle: String, CaseIterable, Identifiable {
@@ -177,6 +192,7 @@ struct GallerySettings {
     var marginRight:     Double              = 10
     var gutterH:         Double              = 5    // mezera vodorovně
     var gutterV:         Double              = 5    // mezera svisle
+    var centerOnPage:    Bool               = false // ignorovat okraje, vystředit mřížku
 
     // Ořezové značky
     var addCropMarks:    Bool                = false
@@ -224,6 +240,20 @@ struct GallerySettings {
     var effectiveLabelHeightMM: Double {
         (showImageLabel && !labelInside) ? labelAreaHeightMM : 0
     }
+
+    // Efekt obrázku
+    var imageEffect:       GalleryImageEffect  = .none
+    // Duotone barvy (stíny → světla)
+    var duotoneShadowColor:    Color  = Color(red: 0.04, green: 0.18, blue: 0.42)  // hluboká modrofialová
+    var duotoneHighlightColor: Color  = Color(red: 1.00, green: 0.60, blue: 0.15)  // teplá oranžová
+
+    // Prolnutí krajů do ztracena
+    var featherEdges:    Bool                = false
+    var featherAmount:   Double              = 20.0  // % šířky/výšky rámečku, 1–50
+
+    // Kulaté rohy
+    var roundCorners:    Bool                = false
+    var cornerRadius:    Double              = 5.0   // mm
 
     // Uložení / převzorkování
     var resampleImages:  Bool                = true  // optimalizace na výslednou DPI
@@ -298,6 +328,7 @@ struct GalleryPresetData: Codable, Identifiable {
     var marginRight:  Double = 10
     var gutterH:      Double = 5
     var gutterV:      Double = 5
+    var centerOnPage: Bool   = false
 
     var addCropMarks: Bool   = false
     var cropMarkLen:  Double = 5
@@ -328,7 +359,14 @@ struct GalleryPresetData: Codable, Identifiable {
     var labelColorHex:      String = "#000000FF"
     var labelBackgroundHex: String = "#00000000"
 
-    var resampleImages: Bool = true
+    var imageEffectRaw:        String = GalleryImageEffect.none.rawValue
+    var duotoneShadowHex:      String = "#0A2E6BFF"
+    var duotoneHighlightHex:   String = "#FF9926FF"
+    var featherEdges:    Bool   = false
+    var featherAmount:   Double = 20.0
+    var roundCorners:    Bool   = false
+    var cornerRadius:    Double = 5.0
+    var resampleImages:  Bool   = true
 }
 
 // MARK: - Per-image pan/zoom state

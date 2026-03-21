@@ -35,27 +35,44 @@ struct GalleryLayout {
     init(settings: GallerySettings, imageCount: Int = 0) {
         let paper = settings.effectivePaperMM
         paperW = paper.width;  paperH = paper.height
-        mL = settings.marginLeft;  mT = settings.marginTop
-        let mR = settings.marginRight, mB = settings.marginBottom
         gH = settings.gutterH;  gV = settings.gutterV
-        let usableW = paper.width  - mL - mR
-        let usableH = paper.height - mT - mB
         let lH = settings.effectiveLabelHeightMM
         labelH = lH
+
+        // Při centrování ignorujeme okraje pro výpočet počtu sloupců/řádků
+        let usableW = settings.centerOnPage
+            ? paper.width
+            : paper.width  - settings.marginLeft - settings.marginRight
+        let usableH = settings.centerOnPage
+            ? paper.height
+            : paper.height - settings.marginTop - settings.marginBottom
+
+        let c: Int; let r: Int; let fw: Double; let fh: Double
         if settings.fillPageEvenly && imageCount > 0 {
-            let (c, r, fw, fh) = GalleryLayout.fillLayout(
+            (c, r, fw, fh) = GalleryLayout.fillLayout(
                 count: imageCount, usableW: usableW, usableH: usableH,
                 gH: gH, gV: gV, labelH: lH)
-            cols = c; rows = r; frameW = fw; frameH = fh
         } else if let fmm = settings.effectiveFrameMM {
-            frameW = fmm.width;  frameH = fmm.height
-            cols   = max(1, Int((usableW + gH) / (fmm.width  + gH)))
-            rows   = max(1, Int((usableH + gV) / (fmm.height + lH + gV)))
+            fw = fmm.width;  fh = fmm.height
+            c  = max(1, Int((usableW + gH) / (fmm.width  + gH)))
+            r  = max(1, Int((usableH + gV) / (fmm.height + lH + gV)))
         } else {
-            frameW = usableW;  frameH = max(1, usableH - lH)
-            cols   = 1;  rows = 1
+            fw = usableW;  fh = max(1, usableH - lH)
+            c  = 1;  r  = 1
         }
-        perPage = max(1, cols * rows)
+        cols = c; rows = r; frameW = fw; frameH = fh
+        perPage = max(1, c * r)
+
+        // Výpočet levého/horního okraje: buď nastavení, nebo vystředění mřížky
+        if settings.centerOnPage {
+            let gridW = Double(c) * fw + Double(max(0, c - 1)) * gH
+            let gridH = Double(r) * (fh + lH) + Double(max(0, r - 1)) * gV
+            mL = (paper.width  - gridW) / 2
+            mT = (paper.height - gridH) / 2
+        } else {
+            mL = settings.marginLeft
+            mT = settings.marginTop
+        }
     }
 
     /// Vypočítá optimální cols × rows tak, aby N obrázků co nejlépe vyplnilo stránku.
@@ -126,6 +143,7 @@ struct GalleryDialog: View {
     @AppStorage("gallery.marginRight")  private var marginRight:     Double = 10
     @AppStorage("gallery.gutterH")      private var gutterH:         Double = 5
     @AppStorage("gallery.gutterV")      private var gutterV:         Double = 5
+    @AppStorage("gallery.centerOnPage") private var centerOnPage:    Bool   = false
     @AppStorage("gallery.cropMarks")    private var addCropMarks:    Bool   = false
     @AppStorage("gallery.cropMarkLen")  private var cropMarkLen:     Double = 5
     @AppStorage("gallery.cropMarkOff")  private var cropMarkOff:     Double = 2
@@ -140,17 +158,24 @@ struct GalleryDialog: View {
     @AppStorage("gallery.labelSize")    private var labelFontSize:   Double = 9
     @AppStorage("gallery.labelAlign")   private var labelAlignRaw:   String = GalleryLabelAlignment.center.rawValue
     @AppStorage("gallery.resample")     private var resampleImages:  Bool   = true
+    @AppStorage("gallery.imageEffect")  private var imageEffectRaw:  String = GalleryImageEffect.none.rawValue
+    @AppStorage("gallery.featherEdges")  private var featherEdges:   Bool   = false
+    @AppStorage("gallery.featherAmount") private var featherAmount:  Double = 20.0
+    @AppStorage("gallery.roundCorners")  private var roundCorners:   Bool   = false
+    @AppStorage("gallery.cornerRadius")  private var cornerRadius:   Double = 5.0
     @AppStorage("gallery.shadow")       private var addFrameShadow:  Bool   = false
     @AppStorage("gallery.shadowX")      private var shadowOffsetX:   Double = 2.0
     @AppStorage("gallery.shadowY")      private var shadowOffsetY:   Double = 2.0
     @AppStorage("gallery.shadowBlur")   private var shadowBlur:      Double = 3.0
     @AppStorage("gallery.shadowOp")     private var shadowOpacity:   Double = 50.0
 
-    @State private var labelColor:        Color  = .black
-    @State private var labelBackground:   Color  = .clear
-    @State private var borderColor:       Color  = .black
-    @State private var pageBackground:    Color  = .white
-    @State private var shadowColor:       Color  = .black
+    @State private var labelColor:          Color  = .black
+    @State private var labelBackground:     Color  = .clear
+    @State private var borderColor:         Color  = .black
+    @State private var pageBackground:      Color  = .white
+    @State private var shadowColor:         Color  = .black
+    @State private var duotoneShadow:       Color  = Color(red: 0.04, green: 0.18, blue: 0.42)
+    @State private var duotoneHighlight:    Color  = Color(red: 1.00, green: 0.60, blue: 0.15)
 
     // Předvolby
     @State private var presets:           [GalleryPresetData] = []
@@ -174,6 +199,7 @@ struct GalleryDialog: View {
     private var orientation:    GalleryOrientation    { GalleryOrientation(rawValue: orientationRaw)     ?? .portrait }
     private var frameSize:      GalleryFrameSize      { GalleryFrameSize(rawValue: frameSizeRaw)         ?? .s10x15 }
     private var labelAlignment: GalleryLabelAlignment { GalleryLabelAlignment(rawValue: labelAlignRaw)   ?? .center }
+    private var imageEffect:    GalleryImageEffect    { GalleryImageEffect(rawValue: imageEffectRaw)     ?? .none   }
 
     private var settings: GallerySettings {
         GallerySettings(
@@ -183,6 +209,7 @@ struct GalleryDialog: View {
             marginTop: marginTop, marginBottom: marginBottom,
             marginLeft: marginLeft, marginRight: marginRight,
             gutterH: gutterH, gutterV: gutterV,
+            centerOnPage: centerOnPage,
             addCropMarks: addCropMarks, cropMarkLength: cropMarkLen,
             cropMarkOffset: cropMarkOff, cropMarkWidth: cropMarkW,
             addFrameBorder: addFrameBorder, frameBorderWidth: borderWidth,
@@ -198,6 +225,10 @@ struct GalleryDialog: View {
             labelFontName: labelFontName, labelFontSize: labelFontSize,
             labelColor: labelColor, labelBackground: labelBackground,
             labelAlignment: labelAlignment,
+            imageEffect: imageEffect,
+            duotoneShadowColor: duotoneShadow, duotoneHighlightColor: duotoneHighlight,
+            featherEdges: featherEdges, featherAmount: featherAmount,
+            roundCorners: roundCorners, cornerRadius: cornerRadius,
             resampleImages: resampleImages
         )
     }
@@ -324,11 +355,26 @@ struct GalleryDialog: View {
         .background(Color(NSColor.windowBackgroundColor))
     }
 
+    // MARK: - Section divider helper
+
+    @ViewBuilder
+    private func sectionHeader(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(.caption2, weight: .semibold))
+                .foregroundColor(.secondary)
+            Rectangle()
+                .fill(Color(NSColor.separatorColor))
+                .frame(height: 0.5)
+        }
+        .padding(.top, 4)
+    }
+
     // MARK: Settings Panel
 
     private var settingsPanel: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
 
                 // ── Předvolby ───────────────────────────────────────────────
                 GroupBox("Předvolby") {
@@ -403,6 +449,8 @@ struct GalleryDialog: View {
                         }
                     }.padding(.vertical, 4)
                 }
+
+                sectionHeader("ROZVRŽENÍ")
 
                 GroupBox("Papír") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -527,6 +575,9 @@ struct GalleryDialog: View {
                                 .textFieldStyle(.roundedBorder).frame(width: 44)
                             Text("mm").foregroundColor(.secondary)
                         }
+                        Divider()
+                        Toggle("Vystředit mřížku na stránce", isOn: $centerOnPage)
+                            .help("Ignoruje okraje a vystředí obrázky přesně na střed stránky")
                     }.padding(.vertical, 4)
                 }
 
@@ -543,6 +594,24 @@ struct GalleryDialog: View {
                             HStack(spacing: 4) {
                                 Text("Offset").frame(width: 52, alignment: .leading)
                                 TextField("", value: $cropMarkOff, format: .number)
+                                    .textFieldStyle(.roundedBorder).frame(width: 44)
+                                Text("mm").foregroundColor(.secondary)
+                            }
+                        }
+                    }.padding(.vertical, 4)
+                }
+
+                sectionHeader("VZHLED RÁMEČKU")
+
+                GroupBox("Kulaté rohy") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Zakulatit rohy", isOn: $roundCorners)
+                        if roundCorners {
+                            HStack(spacing: 4) {
+                                Text("Rádius").frame(width: 70, alignment: .leading)
+                                Slider(value: $cornerRadius, in: 1...30)
+                                    .frame(width: 80)
+                                TextField("", value: $cornerRadius, format: .number)
                                     .textFieldStyle(.roundedBorder).frame(width: 44)
                                 Text("mm").foregroundColor(.secondary)
                             }
@@ -569,6 +638,8 @@ struct GalleryDialog: View {
                     }.padding(.vertical, 4)
                 }
 
+                sectionHeader("STRÁNKA")
+
                 GroupBox("Pozadí stránky") {
                     HStack(spacing: 8) {
                         Text("Barva pozadí").foregroundColor(.secondary).font(.caption)
@@ -577,6 +648,54 @@ struct GalleryDialog: View {
                         Button("Bílá") { pageBackground = .white }
                             .buttonStyle(.borderless).font(.caption).foregroundColor(.secondary)
                     }.padding(.vertical, 4)
+                }
+
+                sectionHeader("EFEKTY")
+
+                GroupBox("Efekt obrázku") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("", selection: Binding(
+                            get: { imageEffect },
+                            set: { imageEffectRaw = $0.rawValue }
+                        )) {
+                            ForEach(GalleryImageEffect.allCases) {
+                                Text($0.rawValue).tag($0)
+                            }
+                        }
+                        .labelsHidden()
+
+                        if imageEffect == .duotone {
+                            HStack(spacing: 6) {
+                                Text("Stíny").frame(width: 52, alignment: .leading)
+                                    .foregroundColor(.secondary).font(.caption)
+                                ColorPicker("", selection: $duotoneShadow, supportsOpacity: false)
+                                    .labelsHidden().frame(width: 28, height: 24)
+                                Spacer()
+                                // Předdefinované páry
+                                Menu {
+                                    Button("Teal / Orange")   { duotoneShadow = Color(red: 0.04, green: 0.28, blue: 0.38); duotoneHighlight = Color(red: 1.00, green: 0.60, blue: 0.15) }
+                                    Button("Navy / Gold")     { duotoneShadow = Color(red: 0.04, green: 0.10, blue: 0.35); duotoneHighlight = Color(red: 0.95, green: 0.78, blue: 0.10) }
+                                    Button("Purple / Peach")  { duotoneShadow = Color(red: 0.30, green: 0.05, blue: 0.45); duotoneHighlight = Color(red: 1.00, green: 0.75, blue: 0.65) }
+                                    Button("Forest / Sand")   { duotoneShadow = Color(red: 0.10, green: 0.28, blue: 0.15); duotoneHighlight = Color(red: 0.92, green: 0.82, blue: 0.62) }
+                                    Button("Midnight / Pink") { duotoneShadow = Color(red: 0.06, green: 0.06, blue: 0.22); duotoneHighlight = Color(red: 1.00, green: 0.55, blue: 0.75) }
+                                    Button("Charcoal / Ice")  { duotoneShadow = Color(red: 0.12, green: 0.12, blue: 0.14); duotoneHighlight = Color(red: 0.78, green: 0.93, blue: 1.00) }
+                                } label: {
+                                    Image(systemName: "swatchpalette")
+                                        .foregroundColor(.secondary)
+                                }
+                                .menuStyle(.borderlessButton)
+                                .frame(width: 24)
+                                .help("Předdefinované kombinace barev")
+                            }
+                            HStack(spacing: 6) {
+                                Text("Světla").frame(width: 52, alignment: .leading)
+                                    .foregroundColor(.secondary).font(.caption)
+                                ColorPicker("", selection: $duotoneHighlight, supportsOpacity: false)
+                                    .labelsHidden().frame(width: 28, height: 24)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 GroupBox("Stín za obrázkem") {
@@ -616,6 +735,25 @@ struct GalleryDialog: View {
                         }
                     }.padding(.vertical, 4)
                 }
+
+                GroupBox("Prolnutí krajů") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Prolnout do ztracena", isOn: $featherEdges)
+                        if featherEdges {
+                            HStack(spacing: 4) {
+                                Text("Intenzita").frame(width: 70, alignment: .leading)
+                                Slider(value: $featherAmount, in: 1...50)
+                                    .frame(width: 80)
+                                Text("\(Int(featherAmount)) %")
+                                    .foregroundColor(.secondary).frame(width: 34, alignment: .trailing)
+                            }
+                            Text("Barva prolnutí = pozadí stránky")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }.padding(.vertical, 4)
+                }
+
+                sectionHeader("POPISEK")
 
                 GroupBox("Text pod obrázkem") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -665,6 +803,8 @@ struct GalleryDialog: View {
                         }
                     }.padding(.vertical, 4)
                 }
+
+                sectionHeader("EXPORT")
 
                 GroupBox("Při ukládání") {
                     Toggle("Převzorkovat obrázky", isOn: $resampleImages).padding(.vertical, 4)
@@ -852,6 +992,7 @@ struct GalleryDialog: View {
         p.marginTop      = marginTop;       p.marginBottom   = marginBottom
         p.marginLeft     = marginLeft;      p.marginRight    = marginRight
         p.gutterH        = gutterH;         p.gutterV        = gutterV
+        p.centerOnPage   = centerOnPage
         p.addCropMarks   = addCropMarks
         p.cropMarkLen    = cropMarkLen;     p.cropMarkOff    = cropMarkOff
         p.cropMarkW      = cropMarkW
@@ -868,6 +1009,11 @@ struct GalleryDialog: View {
         p.labelAlignRaw  = labelAlignRaw
         p.labelColorHex      = galleryColorToHex(labelColor)
         p.labelBackgroundHex = galleryColorToHex(labelBackground)
+        p.imageEffectRaw      = imageEffectRaw
+        p.duotoneShadowHex    = galleryColorToHex(duotoneShadow)
+        p.duotoneHighlightHex = galleryColorToHex(duotoneHighlight)
+        p.featherEdges   = featherEdges;    p.featherAmount  = featherAmount
+        p.roundCorners   = roundCorners;    p.cornerRadius   = cornerRadius
         p.resampleImages = resampleImages
         return p
     }
@@ -880,6 +1026,7 @@ struct GalleryDialog: View {
         marginTop      = p.marginTop;       marginBottom   = p.marginBottom
         marginLeft     = p.marginLeft;      marginRight    = p.marginRight
         gutterH        = p.gutterH;         gutterV        = p.gutterV
+        centerOnPage   = p.centerOnPage
         addCropMarks   = p.addCropMarks
         cropMarkLen    = p.cropMarkLen;     cropMarkOff    = p.cropMarkOff
         cropMarkW      = p.cropMarkW
@@ -896,6 +1043,11 @@ struct GalleryDialog: View {
         labelAlignRaw  = p.labelAlignRaw
         labelColor     = galleryColorFromHex(p.labelColorHex)
         labelBackground = galleryColorFromHex(p.labelBackgroundHex)
+        imageEffectRaw    = p.imageEffectRaw
+        duotoneShadow     = galleryColorFromHex(p.duotoneShadowHex)
+        duotoneHighlight  = galleryColorFromHex(p.duotoneHighlightHex)
+        featherEdges  = p.featherEdges;    featherAmount  = p.featherAmount
+        roundCorners  = p.roundCorners;    cornerRadius   = p.cornerRadius
         resampleImages = p.resampleImages
     }
 
@@ -1003,7 +1155,14 @@ struct GalleryPagePreview: View {
                                 shadowOffsetY: settings.shadowOffsetY * Double(scale),
                                 shadowBlurPx:  settings.shadowBlur    * Double(scale),
                                 shadowOpacity: settings.shadowOpacity / 100.0,
-                                shadowColor:   settings.shadowColor
+                                shadowColor:     settings.shadowColor,
+                                imageEffect:       settings.imageEffect,
+                                duotoneShadow:     settings.duotoneShadowColor,
+                                duotoneHighlight:  settings.duotoneHighlightColor,
+                                featherEdges:      settings.featherEdges,
+                                featherAmount:     settings.featherAmount,
+                                featherBackground: settings.pageBackgroundColor,
+                                cornerRadiusPx:    settings.roundCorners ? settings.cornerRadius * Double(scale) : 0
                             )
                             .frame(width: rect.width, height: rect.height)
                             .offset(x: rect.minX, y: rect.minY)
@@ -1173,6 +1332,66 @@ struct FontPickerButton: View {
 
 // MARK: - Frame View
 
+// MARK: - Effect view modifier (náhled)
+
+private struct GalleryEffectModifier: ViewModifier {
+    let effect: GalleryImageEffect
+    var duotoneShadow:    Color = Color(red: 0.04, green: 0.18, blue: 0.42)
+    var duotoneHighlight: Color = Color(red: 1.00, green: 0.60, blue: 0.15)
+
+    func body(content: Content) -> some View {
+        content
+            .grayscale(grayscaleAmount)
+            .saturation(saturationAmount)
+            .contrast(contrastAmount)
+            .brightness(brightnessAmount)
+            .colorMultiply(tintColor)
+    }
+
+    private var grayscaleAmount: Double {
+        switch effect {
+        case .grayscale: return 1.0
+        case .sepia:     return 1.0
+        case .oldPhoto:  return 0.85
+        case .duotone:   return 1.0
+        default:         return 0.0
+        }
+    }
+    private var saturationAmount: Double {
+        switch effect {
+        case .vivid:  return 1.6
+        case .faded:  return 0.65
+        default:      return 1.0
+        }
+    }
+    private var contrastAmount: Double {
+        switch effect {
+        case .vivid:    return 1.1
+        case .faded:    return 0.82
+        case .oldPhoto: return 0.88
+        default:        return 1.0
+        }
+    }
+    private var brightnessAmount: Double {
+        switch effect {
+        case .faded:    return 0.05
+        case .oldPhoto: return -0.02
+        default:        return 0.0
+        }
+    }
+    private var tintColor: Color {
+        switch effect {
+        case .sepia:    return Color(red: 1.0,  green: 0.86, blue: 0.65)
+        case .oldPhoto: return Color(red: 1.05, green: 0.90, blue: 0.70)
+        case .coolTone: return Color(red: 0.84, green: 0.93, blue: 1.12)
+        case .duotone:  return duotoneHighlight   // přibližný náhled světel
+        default:        return .white
+        }
+    }
+}
+
+// MARK: - Frame View
+
 struct GalleryFrameView: View {
     @Binding var state: GalleryImageState
     let isActive:  Bool
@@ -1191,6 +1410,13 @@ struct GalleryFrameView: View {
     var shadowBlurPx:  Double = 3.0   // screen px
     var shadowOpacity: Double = 0.5
     var shadowColor:   Color  = .black
+    var imageEffect:        GalleryImageEffect = .none
+    var duotoneShadow:      Color  = Color(red: 0.04, green: 0.18, blue: 0.42)
+    var duotoneHighlight:   Color  = Color(red: 1.00, green: 0.60, blue: 0.15)
+    var featherEdges:       Bool   = false
+    var featherAmount:      Double = 20.0  // % šířky/výšky
+    var featherBackground:  Color  = .white
+    var cornerRadiusPx:     Double = 0  // screen px, 0 = bez zakulacení
 
     @State private var lastPan:    CGSize  = .zero
     @State private var loadedImg:  NSImage? = nil
@@ -1302,7 +1528,36 @@ struct GalleryFrameView: View {
             }
         }
         .frame(width: frameSize.width, height: frameSize.height)
-        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadiusPx))
+        .overlay {
+            if featherEdges && featherAmount > 0 {
+                let f = featherAmount / 100.0
+                ZStack {
+                    // levý okraj
+                    LinearGradient(colors: [featherBackground, .clear],
+                                   startPoint: .leading,
+                                   endPoint:   UnitPoint(x: f, y: 0.5))
+                    // pravý okraj
+                    LinearGradient(colors: [.clear, featherBackground],
+                                   startPoint: UnitPoint(x: 1 - f, y: 0.5),
+                                   endPoint:   .trailing)
+                    // horní okraj
+                    LinearGradient(colors: [featherBackground, .clear],
+                                   startPoint: .top,
+                                   endPoint:   UnitPoint(x: 0.5, y: f))
+                    // dolní okraj
+                    LinearGradient(colors: [.clear, featherBackground],
+                                   startPoint: UnitPoint(x: 0.5, y: 1 - f),
+                                   endPoint:   .bottom)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .modifier(GalleryEffectModifier(
+            effect: imageEffect,
+            duotoneShadow: duotoneShadow,
+            duotoneHighlight: duotoneHighlight
+        ))
         // Stín za rámečkem
         .shadow(
             color: shadowEnabled ? shadowColor.opacity(shadowOpacity) : .clear,
@@ -1313,7 +1568,8 @@ struct GalleryFrameView: View {
         // Linka okolo rámečku z nastavení (addFrameBorder)
         .overlay(alignment: .center) {
             if borderEnabled {
-                Rectangle().stroke(borderColor, lineWidth: CGFloat(borderWidth))
+                RoundedRectangle(cornerRadius: cornerRadiusPx)
+                    .stroke(borderColor, lineWidth: CGFloat(borderWidth))
             }
         }
         // Selection indicator (nad linkou nastavení)

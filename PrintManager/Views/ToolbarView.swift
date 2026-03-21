@@ -98,6 +98,7 @@ struct ModernToolbar: ToolbarContent {
         ToolbarItem(placement: .automatic) {
             Menu {
                 Button("Stitch (Panorama)…") { appState.openStitchDialog() }
+                    .disabled(appState.files.filter({ appState.selectedFiles.contains($0.id) && $0.fileType.isImage }).count < 2)
                 Divider()
                 Button("Create Gallery…")    { appState.openGalleryDialog() }
             } label: {

@@ -38,6 +38,8 @@ struct ImageAdjustSettings: Equatable, Codable {
     var sharpness:      Double = 0.0   // 0 … 2.0
     var blur:           Double = 0.0   // 0 … 20 px
     var noiseReduction: Double = 0.0   // 0 … 0.1
+    // Invertovat barvy
+    var invert:         Bool   = false
     // Odstranění pozadí
     var removeBG:       Bool   = false
     var bgMethod:       BGRemovalMethod = .vision
@@ -52,7 +54,7 @@ struct ImageAdjustSettings: Equatable, Codable {
         temperature == 0 && shadows == 0 && highlights == 0 &&
         blackPoint == 0 && whitePoint == 1 &&
         sharpness == 0 && blur == 0 && noiseReduction == 0 &&
-        !removeBG
+        !invert && !removeBG
     }
 }
 
@@ -197,7 +199,12 @@ class ImageAdjustService {
                 .cropped(to: originalExtent)
         }
 
-        // 10. Odstranění pozadí (poslední krok — pracuje s finálně upravenými barvami)
+        // 10. Invertovat barvy
+        if settings.invert {
+            img = img.applyingFilter("CIColorInvert")
+        }
+
+        // 11. Odstranění pozadí (poslední krok — pracuje s finálně upravenými barvami)
         if settings.removeBG {
             img = (try? applyBGRemoval(settings, to: img)) ?? img
         }

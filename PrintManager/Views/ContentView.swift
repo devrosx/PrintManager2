@@ -369,7 +369,6 @@ struct PrinterListPanel: View {
                                 icon: printerIcons[printer],
                                 status: printManager.printerStatuses[printer] ?? .idle,
                                 isDefault: printManager.defaultPrinter == printer,
-                                isPreferred: !preferredPrinter.isEmpty && preferredPrinter == printer,
                                 ip: printManager.printerIPs[printer],
                                 onSelect: {
                                     appState.selectedPrinter = printer
@@ -404,6 +403,25 @@ struct PrinterListPanel: View {
             }
             .background(DS.Colors.controlBackground)
 
+            // ── Počet kopií ───────────────────────────────────────────────────
+            if !appState.selectedPrinter.isEmpty {
+                Divider()
+                HStack(spacing: DS.Spacing.xSmall) {
+                    Text("Kopie")
+                        .font(DS.Typography.captionSemibold)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Stepper(value: $appState.printCopies, in: 1...999) {
+                        Text("\(appState.printCopies)")
+                            .font(.system(size: 13, weight: .medium).monospacedDigit())
+                            .frame(minWidth: 24, alignment: .trailing)
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, DS.Spacing.smallMedium)
+                .padding(.vertical, 7)
+            }
+
             // ── Preset sekce ─────────────────────────────────────────────────
             if !appState.selectedPrinter.isEmpty {
                 Divider()
@@ -415,6 +433,13 @@ struct PrinterListPanel: View {
             if !appState.selectedPrinter.isEmpty {
                 appState.loadSystemPresets()
             }
+        }
+        // Změna výchozí tiskárny v Předvolbách → okamžitě přepne výběr
+        .onChange(of: preferredPrinter) { newPreferred in
+            guard !newPreferred.isEmpty,
+                  printManager.availablePrinters.contains(newPreferred) else { return }
+            appState.selectedPrinter = newPreferred
+            appState.loadSystemPresets()
         }
     }
 
@@ -791,7 +816,6 @@ struct PrinterRowView: View {
     let icon: NSImage?
     let status: PrinterStatus
     let isDefault: Bool
-    let isPreferred: Bool
     let ip: String?
     let onSelect: () -> Void
     let onOpenCUPS: () -> Void
@@ -807,7 +831,7 @@ struct PrinterRowView: View {
     }
 
     private var dotColor: Color {
-        isSelected ? .white.opacity(0.85) : Color(status.color)
+        Color(status.color)
     }
 
     var body: some View {
@@ -822,7 +846,7 @@ struct PrinterRowView: View {
                 Image(systemName: "printer.fill")
                     .font(.system(size: 22))
                     .frame(width: 32, height: 32)
-                    .foregroundColor(isSelected ? .white : .accentColor)
+                    .foregroundColor(.accentColor)
             }
 
             // Name + status
@@ -830,7 +854,6 @@ struct PrinterRowView: View {
                 Text(printer)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
-                    .foregroundColor(isSelected ? .white : .primary)
 
                 HStack(spacing: DS.Spacing.xxSmall) {
                     Circle()
@@ -839,28 +862,30 @@ struct PrinterRowView: View {
                         .accessibilityHidden(true)
                     Text(statusLabel)
                         .font(DS.Typography.caption2)
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(.secondary)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Status: \(statusLabel)")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Preferred marker (nastaveno v Preferences)
-            if isPreferred {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(isSelected ? .white.opacity(0.9) : .accentColor)
-                    .help("Výchozí tiskárna (nastaveno v Preferences)")
-            }
         }
         .padding(.horizontal, DS.Spacing.small)
         .padding(.vertical, DS.Spacing.xSmall)
         .background(
             isDropTargeted
                 ? Color.accentColor.opacity(0.18)
-                : (isSelected ? Color.accentColor : Color.clear)
+                : (isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         )
+        .overlay(alignment: .leading) {
+            // Výrazný levý pruh – označuje aktivní tiskárnu pro tisk
+            if isSelected {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.accentColor)
+                    .frame(width: 4)
+                    .padding(.vertical, 4)
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.small)
                 .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 1.5)
@@ -895,6 +920,13 @@ struct PrinterRowView: View {
                 onOpenQueue()
             } label: {
                 Label("Otevřít tiskovou frontu", systemImage: "tray.full")
+            }
+            Button {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.printers") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("Otevřít nastavení tiskárny", systemImage: "gearshape")
             }
             if let host = ip {
                 Button {

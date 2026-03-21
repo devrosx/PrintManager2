@@ -114,37 +114,6 @@ class ImageService {
         return outputURL
     }
     
-    // MARK: - Invert Image
-    
-    func invertImage(url: URL) async throws -> URL {
-        guard let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw ImageError.invalidImage
-        }
-        
-        let ciImage = CIImage(cgImage: cgImage)
-        
-        guard let filter = CIFilter(name: "CIColorInvert") else {
-            throw ImageError.processingFailed
-        }
-        
-        filter.setValue(ciImage, forKey: kCIInputImageKey)
-        
-        guard let outputImage = filter.outputImage else {
-            throw ImageError.processingFailed
-        }
-        guard let outputCGImage = ImageService.ciContext.createCGImage(outputImage, from: outputImage.extent) else {
-            throw ImageError.processingFailed
-        }
-        let finalImage = NSImage(cgImage: outputCGImage, size: NSSize(width: outputCGImage.width, height: outputCGImage.height))
-        let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_inverted")
-            .appendingPathExtension(url.pathExtension)
-        
-        try saveImage(finalImage, to: outputURL)
-        return outputURL
-    }
-    
     // MARK: - Detect and Extract Sub-Images
     
     func detectAndExtractImages(url: URL) async throws -> [URL] {

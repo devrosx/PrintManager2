@@ -10,6 +10,7 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import CoreImage
 import ImageIO
 import SwiftUI
 
@@ -21,6 +22,7 @@ class GalleryService {
     // MARK: - pt konverze
 
     private let mmToPt: Double = 2.834645669
+    private let ciCtx  = CIContext(options: [.useSoftwareRenderer: false])
 
     // MARK: - Public API
 
@@ -45,8 +47,9 @@ class GalleryService {
         let gH = settings.gutterH      * pt
         let gV = settings.gutterV      * pt
 
-        let usableW = paperW - mL - mR
-        let usableH = paperH - mT - mB
+        // Při centrování ignorujeme okraje pro výpočet počtu sloupců/řádků
+        let usableW = settings.centerOnPage ? paperW : paperW - mL - mR
+        let usableH = settings.centerOnPage ? paperH : paperH - mT - mB
 
         // Výpočet layoutu (počet sloupců a řádků)
         let (cols, rows, frameW, frameH) = computeLayout(
@@ -54,6 +57,20 @@ class GalleryService {
             gutterH: gH, gutterV: gV, pt: pt, imageCount: images.count
         )
         let perPage = cols * rows
+
+        // Efektivní okraje: nastaven nebo vystředění mřížky na stránce
+        let effectiveMLeft: Double
+        let effectiveMTop:  Double
+        if settings.centerOnPage {
+            let labelH_pt = settings.effectiveLabelHeightMM * pt
+            let gridW = Double(cols) * frameW + Double(max(0, cols - 1)) * gH
+            let gridH = Double(rows) * (frameH + labelH_pt) + Double(max(0, rows - 1)) * gV
+            effectiveMLeft = (paperW - gridW) / 2
+            effectiveMTop  = (paperH - gridH) / 2
+        } else {
+            effectiveMLeft = mL
+            effectiveMTop  = mT
+        }
 
         // Výstupní soubor do temp složky
         let outURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -93,9 +110,9 @@ class GalleryService {
                 let col = i % cols
                 let row = i / cols
 
-                let cellX = mL + Double(col) * (frameW + gH)
+                let cellX = effectiveMLeft + Double(col) * (frameW + gH)
                 // Dno celé buňky (obrázek + popisek); v CG PDF Y roste nahoru
-                let cellBottomY = paperH - mT - Double(row + 1) * cellH_pt - Double(row) * gV
+                let cellBottomY = paperH - effectiveMTop - Double(row + 1) * cellH_pt - Double(row) * gV
                 // Obrázek je vizuálně nahoře → v Y-up coords nad popiskem
                 let imageY  = cellBottomY + labelH_pt
                 let imageRect = CGRect(x: cellX, y: imageY, width: frameW, height: frameH)
@@ -114,7 +131,14 @@ class GalleryService {
                             color: shadowCG
                         )
                         ctx.setFillColor(CGColor(gray: 1, alpha: 1))
-                        ctx.fill(imageRect)
+                        if settings.roundCorners && settings.cornerRadius > 0 {
+                            let rad = settings.cornerRadius * pt
+                            let path = CGPath(roundedRect: imageRect, cornerWidth: rad, cornerHeight: rad, transform: nil)
+                            ctx.addPath(path)
+                            ctx.fillPath()
+                        } else {
+                            ctx.fill(imageRect)
+                        }
                         ctx.restoreGState()
                     }
                 }
@@ -184,7 +208,8 @@ class GalleryService {
         settings: GallerySettings,
         ctx: CGContext
     ) {
-        guard let cgImg = loadCGImage(url: state.url) else { return }
+        guard var cgImg = loadCGImage(url: state.url) else { return }
+        cgImg = applyEffect(settings, to: cgImg)
 
         let imgW = Double(cgImg.width)
         let imgH = Double(cgImg.height)
@@ -221,7 +246,14 @@ class GalleryService {
         let panY = state.fitMode ? 0.0 : -(state.panOffset.height * maxPanY)
 
         ctx.saveGState()
-        ctx.clip(to: cell)
+        if settings.roundCorners && settings.cornerRadius > 0 {
+            let rad = settings.cornerRadius * mmToPt
+            let path = CGPath(roundedRect: cell, cornerWidth: rad, cornerHeight: rad, transform: nil)
+            ctx.addPath(path)
+            ctx.clip()
+        } else {
+            ctx.clip(to: cell)
+        }
 
         // V fit módu vyplníme pozadí zvolenou barvou (bílé místo)
         if state.fitMode {
@@ -243,14 +275,145 @@ class GalleryService {
             ctx.saveGState()
             ctx.setLineWidth(settings.frameBorderWidth)
             ctx.setStrokeColor(NSColor(settings.frameBorderColor).cgColor)
-            ctx.stroke(cell)
+            if settings.roundCorners && settings.cornerRadius > 0 {
+                let rad = settings.cornerRadius * mmToPt
+                let path = CGPath(roundedRect: cell, cornerWidth: rad, cornerHeight: rad, transform: nil)
+                ctx.addPath(path)
+                ctx.strokePath()
+            } else {
+                ctx.stroke(cell)
+            }
             ctx.restoreGState()
+        }
+
+        // Prolnutí krajů (kreslíme po obrázku, přes něj)
+        if settings.featherEdges && settings.featherAmount > 0 {
+            drawFeather(cell: cell, settings: settings, ctx: ctx)
         }
 
         // Ořezové značky
         if settings.addCropMarks {
             drawCropMarks(for: cell, settings: settings, ctx: ctx)
         }
+    }
+
+    // MARK: - Image Effect (Core Image)
+
+    private func applyEffect(_ settings: GallerySettings, to cgImg: CGImage) -> CGImage {
+        let effect = settings.imageEffect
+        guard effect != .none else { return cgImg }
+        var ci = CIImage(cgImage: cgImg)
+
+        switch effect {
+        case .none:
+            break
+        case .vivid:
+            ci = ci.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 1.6,
+                kCIInputContrastKey:   1.1
+            ])
+            ci = ci.applyingFilter("CIVibrance", parameters: ["inputAmount": 0.4])
+        case .grayscale:
+            ci = ci.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+        case .sepia:
+            ci = ci.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+            ci = ci.applyingFilter("CISepiaTone", parameters: [kCIInputIntensityKey: 0.85])
+        case .oldPhoto:
+            ci = ci.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.0,
+                kCIInputContrastKey:   0.9,
+                kCIInputBrightnessKey: -0.03
+            ])
+            ci = ci.applyingFilter("CISepiaTone", parameters: [kCIInputIntensityKey: 0.70])
+            ci = ci.applyingFilter("CIVignette", parameters: [
+                kCIInputRadiusKey:    1.8,
+                kCIInputIntensityKey: 0.55
+            ])
+        case .faded:
+            ci = ci.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.65,
+                kCIInputContrastKey:   0.82,
+                kCIInputBrightnessKey: 0.05
+            ])
+            ci = ci.applyingFilter("CIColorMatrix", parameters: [
+                "inputBiasVector": CIVector(x: 0.07, y: 0.07, z: 0.07, w: 0)
+            ])
+        case .coolTone:
+            ci = ci.applyingFilter("CITemperatureAndTint", parameters: [
+                "inputNeutral":       CIVector(x: 8500, y: 0),
+                "inputTargetNeutral": CIVector(x: 6500, y: 0)
+            ])
+        case .duotone:
+            // Desaturace → CIFalseColor přemapuje luminanci na gradient shadow→highlight
+            ci = ci.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+            let shadowNS    = NSColor(settings.duotoneShadowColor).usingColorSpace(.sRGB)
+                              ?? NSColor(red: 0.04, green: 0.18, blue: 0.42, alpha: 1)
+            let highlightNS = NSColor(settings.duotoneHighlightColor).usingColorSpace(.sRGB)
+                              ?? NSColor(red: 1.00, green: 0.60, blue: 0.15, alpha: 1)
+            ci = ci.applyingFilter("CIFalseColor", parameters: [
+                "inputColor0": CIColor(cgColor: shadowNS.cgColor),
+                "inputColor1": CIColor(cgColor: highlightNS.cgColor)
+            ])
+        }
+
+        return ciCtx.createCGImage(ci, from: ci.extent) ?? cgImg
+    }
+
+    // MARK: - Prolnutí krajů do ztracena
+
+    private func drawFeather(cell: CGRect, settings: GallerySettings, ctx: CGContext) {
+        let f   = CGFloat(settings.featherAmount / 100.0)
+        let dx  = cell.width  * f
+        let dy  = cell.height * f
+
+        // Barva pozadí stránky jako cílová barva prolnutí
+        let bgNS = NSColor(settings.pageBackgroundColor).usingColorSpace(.sRGB)
+                   ?? NSColor.white
+        let bgCG   = bgNS.cgColor
+        guard let transparent = bgCG.copy(alpha: 0),
+              let colorSpace  = bgCG.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)
+        else { return }
+
+        ctx.saveGState()
+        // Clip na rámeček (zakulacený nebo rovný)
+        if settings.roundCorners && settings.cornerRadius > 0 {
+            let rad  = settings.cornerRadius * mmToPt
+            let path = CGPath(roundedRect: cell, cornerWidth: rad, cornerHeight: rad, transform: nil)
+            ctx.addPath(path)
+            ctx.clip()
+        } else {
+            ctx.clip(to: cell)
+        }
+
+        let sides: [(CGPoint, CGPoint, [CGColor])] = [
+            // levý okraj: bgCG → transparent (zleva doprava)
+            (CGPoint(x: cell.minX,      y: cell.midY),
+             CGPoint(x: cell.minX + dx, y: cell.midY),
+             [bgCG, transparent]),
+            // pravý okraj: transparent → bgCG (zleva doprava)
+            (CGPoint(x: cell.maxX - dx, y: cell.midY),
+             CGPoint(x: cell.maxX,      y: cell.midY),
+             [transparent, bgCG]),
+            // horní okraj: transparent → bgCG (v PDF Y roste nahoru → maxY je nahoře)
+            (CGPoint(x: cell.midX, y: cell.maxY - dy),
+             CGPoint(x: cell.midX, y: cell.maxY),
+             [transparent, bgCG]),
+            // dolní okraj: bgCG → transparent
+            (CGPoint(x: cell.midX, y: cell.minY),
+             CGPoint(x: cell.midX, y: cell.minY + dy),
+             [bgCG, transparent]),
+        ]
+
+        for (start, end, colors) in sides {
+            guard let gradient = CGGradient(
+                colorsSpace: colorSpace,
+                colors: colors as CFArray,
+                locations: [0, 1]
+            ) else { continue }
+            ctx.drawLinearGradient(gradient, start: start, end: end, options: [])
+        }
+
+        ctx.restoreGState()
     }
 
     // MARK: - Ořezové značky

@@ -305,6 +305,12 @@ struct ImageAdjustDialog: View {
 
     private var bgRemovalBar: some View {
         HStack(spacing: 10) {
+            Toggle("Invertovat barvy", isOn: $settings.invert)
+                .toggleStyle(.checkbox)
+                .onChange(of: settings.invert) { _ in scheduleRender() }
+
+            Divider().frame(height: 16)
+
             Toggle("Odstranit pozadí", isOn: $settings.removeBG)
                 .toggleStyle(.checkbox)
                 .onChange(of: settings.removeBG) { _ in scheduleRender() }

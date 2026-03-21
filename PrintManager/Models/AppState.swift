@@ -1424,38 +1424,6 @@ class AppState: ObservableObject {
         rotateSelectedFiles(degrees: 270.0)
     }
     
-    func invertImage() {
-        let imageFiles = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
-        
-        guard !imageFiles.isEmpty else {
-            logWarning("Select image files to invert")
-            return
-        }
-        
-        logInfo("Inverting \(imageFiles.count) image(s)...")
-        
-        Task {
-            do {
-                for file in imageFiles {
-                    let outputURL = try await imageService.invertImage(url: file.url)
-                    await MainActor.run {
-                        if let index = files.firstIndex(where: { $0.id == file.id }) {
-                            if var newFile = fileParser.parseFile(url: outputURL) {
-                                newFile.isConverted = true
-                                files[index] = newFile
-                            }
-                        }
-                        logSuccess("Inverted: \(file.name)")
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    logError("Failed to invert image: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-    
     func detectAndExtractImages() {
         guard let selectedFile = getSelectedFile(), selectedFile.fileType.isImage else {
             logWarning("Select a single image file")
