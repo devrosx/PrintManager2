@@ -2603,11 +2603,25 @@ struct FileRowView: View {
 
     var body: some View {
         HStack(spacing: DS.Spacing.xSmall) {
-            // Obecná ikona podle typu souboru (bez thumbnail)
-            Image(systemName: file.fileType.icon)
-                .font(.system(size: 14))
-                .foregroundColor(file.fileType.listColor)
+            // Ikona: složka pro portfolio soubory, jinak obecná ikona typu
+            if let source = file.portfolioSource {
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.orange)
+                    Image(systemName: file.fileType.icon)
+                        .font(.system(size: 7))
+                        .foregroundColor(file.fileType.listColor)
+                        .offset(x: 2, y: 2)
+                }
                 .frame(width: 18)
+                .help("Portfolio: \(source)")
+            } else {
+                Image(systemName: file.fileType.icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(file.fileType.listColor)
+                    .frame(width: 18)
+            }
 
             if isEditing {
                 TextField("name", text: $editedName)

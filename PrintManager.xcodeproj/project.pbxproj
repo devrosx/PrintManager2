@@ -82,6 +82,7 @@
 		MODELFILE8 /* GalleryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = MODELREF08 /* GalleryModels.swift */; };
 		SERVFILE26 /* GalleryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF026 /* GalleryService.swift */; };
 		SERVFILE27 /* GalleryInDesignService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF027 /* GalleryInDesignService.swift */; };
+		SERVFILE28 /* PDFPortfolioExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF028 /* PDFPortfolioExtractor.swift */; };
 		VIEWFILE20 /* GalleryDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWREF020 /* GalleryDialog.swift */; };
 /* End PBXBuildFile section */
 
@@ -163,6 +164,7 @@
 		MODELREF08 /* GalleryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryModels.swift; sourceTree = "<group>"; };
 		SERVREF026 /* GalleryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryService.swift; sourceTree = "<group>"; };
 		SERVREF027 /* GalleryInDesignService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryInDesignService.swift; sourceTree = "<group>"; };
+		SERVREF028 /* PDFPortfolioExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPortfolioExtractor.swift; sourceTree = "<group>"; };
 		VIEWREF020 /* GalleryDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryDialog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -278,6 +280,7 @@
 				SERV000025 /* ResizeService.swift */,
 				SERVREF026 /* GalleryService.swift */,
 				SERVREF027 /* GalleryInDesignService.swift */,
+				SERVREF028 /* PDFPortfolioExtractor.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -483,6 +486,7 @@
 				MODELFILE8 /* GalleryModels.swift in Sources */,
 				SERVFILE26 /* GalleryService.swift in Sources */,
 				SERVFILE27 /* GalleryInDesignService.swift in Sources */,
+				SERVFILE28 /* PDFPortfolioExtractor.swift in Sources */,
 				VIEWFILE20 /* GalleryDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

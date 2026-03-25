@@ -712,11 +712,28 @@ class AppState: ObservableObject {
 
         var officeURLs: [URL] = []
         var otherURLs: [URL] = []
+        var portfolioEntries: [(url: URL, source: String)] = []
 
         for url in expandedURLs {
             let fileType = FileType.from(extension: url.pathExtension.lowercased())
-            if fileType.requiresConversion { officeURLs.append(url) }
-            else { otherURLs.append(url) }
+            if fileType == .pdf && PDFPortfolioExtractor.isPortfolio(url: url) {
+                let portfolioName = url.deletingPathExtension().lastPathComponent
+                logInfo("Detected PDF portfolio: \(portfolioName), extracting…")
+                let extracted = PDFPortfolioExtractor.extractFiles(from: url)
+                if extracted.isEmpty {
+                    logWarning("Portfolio \(portfolioName) contains no extractable files, adding as regular PDF")
+                    otherURLs.append(url)
+                } else {
+                    logSuccess("Extracted \(extracted.count) file(s) from portfolio \(portfolioName)")
+                    for eURL in extracted {
+                        portfolioEntries.append((url: eURL, source: portfolioName))
+                    }
+                }
+            } else if fileType.requiresConversion {
+                officeURLs.append(url)
+            } else {
+                otherURLs.append(url)
+            }
         }
 
         // ── Neoffice soubory — přidej placeholder okamžitě, parsuj na pozadí ──
@@ -762,6 +779,66 @@ class AppState: ObservableObject {
                 }
 
                 // Fáze 2: pokud thumbnail nebyl v cache, generuj a ulož na pozadí
+                if parsed.thumbnail == nil {
+                    let thumb = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
+                    DispatchQueue.main.async {
+                        if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
+                            self.files[idx].thumbnail = thumb
+                            self.logSuccess("Loaded: \(parsed.name)")
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Soubory z PDF portfolia — přidej s portfolioSource ────────────────
+        for entry in portfolioEntries {
+            let url = entry.url
+            let fileType = FileType.from(extension: url.pathExtension.lowercased())
+
+            if fileType.requiresConversion {
+                officeURLs.append(url)
+                continue
+            }
+
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+            var placeholder = FileItem(
+                url: url,
+                name: url.deletingPathExtension().lastPathComponent,
+                fileType: fileType,
+                fileSize: fileSize,
+                pageCount: 0,
+                pageSize: .zero,
+                colorInfo: "…",
+                status: .processing
+            )
+            placeholder.isConverted = isOutput
+            placeholder.portfolioSource = entry.source
+            files.append(placeholder)
+            let placeholderID = placeholder.id
+            newIDs.insert(placeholderID)
+
+            let portfolioSrc = entry.source
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                guard var parsed = self.fileParser.parseFile(url: url) else {
+                    DispatchQueue.main.async {
+                        self.files.removeAll { $0.id == placeholderID }
+                        self.logError("Cannot load: \(url.lastPathComponent)")
+                    }
+                    return
+                }
+                parsed.id = placeholderID
+                parsed.isConverted = isOutput
+                parsed.portfolioSource = portfolioSrc
+
+                DispatchQueue.main.async {
+                    if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
+                        self.files[idx] = parsed
+                        if parsed.thumbnail != nil { self.logSuccess("Loaded: \(parsed.name)") }
+                    }
+                }
+
                 if parsed.thumbnail == nil {
                     let thumb = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
                     DispatchQueue.main.async {

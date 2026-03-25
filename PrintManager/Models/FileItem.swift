@@ -26,6 +26,8 @@ struct FileItem: Identifiable, Hashable {
     var contentVersion: Int = 0
     /// true = soubor byl vytvořen operací PrintManageru (ne přidán uživatelem ručně)
     var isConverted: Bool = false
+    /// Název zdrojového PDF portfolia (nil = běžný soubor)
+    var portfolioSource: String? = nil
     
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
@@ -94,6 +96,7 @@ struct FileItem: Identifiable, Hashable {
             && lhs.url == rhs.url
             && lhs.contentVersion == rhs.contentVersion
             && lhs.isConverted == rhs.isConverted
+            && lhs.portfolioSource == rhs.portfolioSource
     }
 }
 
