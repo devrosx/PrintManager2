@@ -265,7 +265,7 @@ struct PrinterListPanel: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var printManager: PrintManager
     @State private var printerIcons: [String: NSImage] = [:]
-    @State private var selectedAppID: UUID? = nil
+    // appState.selectedAppID je v appState — sdílený s DropFileTableView
     @AppStorage("defaultPrinter") private var preferredPrinter = ""
 
     var body: some View {
@@ -284,9 +284,9 @@ struct PrinterListPanel: View {
                     .help("Přidat aplikaci")
 
                     Button {
-                        if let id = selectedAppID {
+                        if let id = appState.selectedAppID {
                             appState.removeExternalApp(id: id)
-                            selectedAppID = nil
+                            appState.selectedAppID = nil
                         }
                     } label: {
                         Image(systemName: "minus")
@@ -294,7 +294,7 @@ struct PrinterListPanel: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Odebrat vybranou aplikaci")
-                    .disabled(selectedAppID == nil)
+                    .disabled(appState.selectedAppID == nil)
                 }
                 .padding(.horizontal, DS.Spacing.smallMedium)
                 .padding(.vertical, 7)
@@ -317,9 +317,9 @@ struct PrinterListPanel: View {
                         ForEach(appState.externalApps) { app in
                             AppRowView(
                                 app: app,
-                                isSelected: selectedAppID == app.id,
+                                isSelected: appState.selectedAppID == app.id,
                                 onSelect: {
-                                    selectedAppID = (selectedAppID == app.id) ? nil : app.id
+                                    appState.selectedAppID = (appState.selectedAppID == app.id) ? nil : app.id
                                 }
                             )
                         }
@@ -1243,18 +1243,23 @@ struct DropFileTableView: View {
                             }
                         }
                     } primaryAction: { items in
-                        // Dvojklik na PDF → inline QuickLook (thumbnail mřížka stránek)
-                        let selectedFiles = appState.files.filter { items.contains($0.id) }
-                        if items.count == 1, let file = selectedFiles.first, file.fileType == .pdf {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                appState.quickLookFileIDs = appState.files.map(\.id)
-                                appState.quickLookFileID  = file.id
-                                appState.quickLookCurrentPage = 0
-                                appState.quickLookMode = .thumbnails
-                                appState.showInlineQuickLook = true
-                            }
+                        // Dvojklik: pokud je vybraná aplikace v Apps panelu → otevři v ní
+                        if appState.selectedAppID != nil {
+                            appState.openInSelectedOrDefaultApp(items: items)
                         } else {
-                            appState.openInDefaultApp(items: items)
+                            // Bez vybrané app: PDF → inline QuickLook, ostatní → default app
+                            let selectedFiles = appState.files.filter { items.contains($0.id) }
+                            if items.count == 1, let file = selectedFiles.first, file.fileType == .pdf {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    appState.quickLookFileIDs = appState.files.map(\.id)
+                                    appState.quickLookFileID  = file.id
+                                    appState.quickLookCurrentPage = 0
+                                    appState.quickLookMode = .thumbnails
+                                    appState.showInlineQuickLook = true
+                                }
+                            } else {
+                                appState.openInDefaultApp(items: items)
+                            }
                         }
                     }
                 }

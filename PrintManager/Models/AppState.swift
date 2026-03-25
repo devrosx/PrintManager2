@@ -67,6 +67,7 @@ class AppState: ObservableObject {
 
     // External Apps
     @Published var externalApps: [ExternalApp] = []
+    @Published var selectedAppID: UUID? = nil
     
     // Print settings
     @Published var selectedPrinter: String = ""
@@ -1672,6 +1673,25 @@ class AppState: ObservableObject {
         let filesToOpen = files.filter { items.contains($0.id) }
         for file in filesToOpen {
             NSWorkspace.shared.open(file.url)
+        }
+    }
+
+    /// Otevře soubory ve vybrané externí aplikaci (selectedAppID), nebo v default app.
+    func openInSelectedOrDefaultApp(items: Set<UUID>) {
+        if let appID = selectedAppID,
+           let app = externalApps.first(where: { $0.id == appID }) {
+            let urls = files.filter { items.contains($0.id) }.map { $0.url }
+            guard !urls.isEmpty else { return }
+            NSWorkspace.shared.open(urls, withApplicationAt: app.url,
+                                    configuration: .init()) { _, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self.logError("Cannot open in \(app.name): \(error.localizedDescription)")
+                    }
+                }
+            }
+        } else {
+            openInDefaultApp(items: items)
         }
     }
     
