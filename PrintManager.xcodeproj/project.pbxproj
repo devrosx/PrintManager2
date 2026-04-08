@@ -84,6 +84,12 @@
 		SERVFILE27 /* GalleryInDesignService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF027 /* GalleryInDesignService.swift */; };
 		SERVFILE28 /* PDFPortfolioExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SERVREF028 /* PDFPortfolioExtractor.swift */; };
 		VIEWFILE20 /* GalleryDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWREF020 /* GalleryDialog.swift */; };
+		MODELREF09 /* CollageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLMODELR /* CollageModels.swift */; };
+		COLLVMFILE /* CollageViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLVMREF0 /* CollageViewModel.swift */; };
+		SERVREF029 /* CollageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLSERVRF /* CollageService.swift */; };
+		VIEWREF021 /* CollagePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLPREVRF /* CollagePreviewView.swift */; };
+		VIEWREF022 /* CollageDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLDIALRF /* CollageDialog.swift */; };
+		PDFIMGBFRF /* PDFToImageDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = PDFIMGDLRF /* PDFToImageDialog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -166,6 +172,12 @@
 		SERVREF027 /* GalleryInDesignService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryInDesignService.swift; sourceTree = "<group>"; };
 		SERVREF028 /* PDFPortfolioExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPortfolioExtractor.swift; sourceTree = "<group>"; };
 		VIEWREF020 /* GalleryDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryDialog.swift; sourceTree = "<group>"; };
+		COLLMODELR /* CollageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageModels.swift; sourceTree = "<group>"; };
+		COLLVMREF0 /* CollageViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageViewModel.swift; sourceTree = "<group>"; };
+		COLLSERVRF /* CollageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageService.swift; sourceTree = "<group>"; };
+		COLLPREVRF /* CollagePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollagePreviewView.swift; sourceTree = "<group>"; };
+		COLLDIALRF /* CollageDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageDialog.swift; sourceTree = "<group>"; };
+		PDFIMGDLRF /* PDFToImageDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFToImageDialog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -216,6 +228,8 @@
 				4541B66095B2272ACC1374A0 /* ImpositionModels.swift */,
 				MODELFILE7 /* StitchModels.swift */,
 				MODELREF08 /* GalleryModels.swift */,
+				COLLMODELR /* CollageModels.swift */,
+				COLLVMREF0 /* CollageViewModel.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -281,6 +295,7 @@
 				SERVREF026 /* GalleryService.swift */,
 				SERVREF027 /* GalleryInDesignService.swift */,
 				SERVREF028 /* PDFPortfolioExtractor.swift */,
+				COLLSERVRF /* CollageService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -323,6 +338,9 @@
 				VIEWFILE18 /* ImageAdjustDialog.swift */,
 				VIEW000019 /* ResizeDialog.swift */,
 				VIEWREF020 /* GalleryDialog.swift */,
+				COLLPREVRF /* CollagePreviewView.swift */,
+				COLLDIALRF /* CollageDialog.swift */,
+				PDFIMGDLRF /* PDFToImageDialog.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -488,6 +506,12 @@
 				SERVFILE27 /* GalleryInDesignService.swift in Sources */,
 				SERVFILE28 /* PDFPortfolioExtractor.swift in Sources */,
 				VIEWFILE20 /* GalleryDialog.swift in Sources */,
+				MODELREF09 /* CollageModels.swift in Sources */,
+				COLLVMFILE /* CollageViewModel.swift in Sources */,
+				SERVREF029 /* CollageService.swift in Sources */,
+				VIEWREF021 /* CollagePreviewView.swift in Sources */,
+				VIEWREF022 /* CollageDialog.swift in Sources */,
+				PDFIMGBFRF /* PDFToImageDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

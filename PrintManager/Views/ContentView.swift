@@ -185,6 +185,23 @@ struct ContentView: View {
                     .id(appState.galleryImageFiles.map(\.id.uuidString).joined())
             }
         }
+        .sheet(isPresented: $appState.showCollageDialog) {
+            if !appState.collageImageFiles.isEmpty {
+                CollageDialog(isPresented: $appState.showCollageDialog,
+                              imageFiles: appState.collageImageFiles)
+                    .environmentObject(appState)
+                    .id(appState.collageImageFiles.map(\.id.uuidString).joined())
+            }
+        }
+        .sheet(isPresented: $appState.showPDFToImageDialog) {
+            if !appState.pdfToImageFiles.isEmpty {
+                PDFToImageDialog(
+                    isPresented: $appState.showPDFToImageDialog,
+                    pdfFiles: appState.pdfToImageFiles
+                )
+                .environmentObject(appState)
+            }
+        }
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 // Cmd+I to toggle preview

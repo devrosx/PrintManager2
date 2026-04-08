@@ -319,6 +319,10 @@ class AppState: ObservableObject {
     @Published var showResizeDialog = false
     @Published var resizeDialogFiles: [FileItem] = []
 
+    // PDF to Image Export
+    @Published var showPDFToImageDialog = false
+    @Published var pdfToImageFiles: [FileItem] = []
+
     func openImageAdjustDialog() {
         let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
         guard !imgs.isEmpty else {
@@ -341,6 +345,20 @@ class AppState: ObservableObject {
         }
         galleryImageFiles = imgs
         showGalleryDialog = true
+    }
+
+    // Collage
+    @Published var showCollageDialog = false
+    @Published var collageImageFiles: [FileItem] = []
+
+    func openCollageDialog() {
+        let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
+        guard imgs.count >= 2 else {
+            logWarning("Vyber alespoň 2 obrázky pro vytvoření koláže")
+            return
+        }
+        collageImageFiles = imgs
+        showCollageDialog = true
     }
 
     // Background Removal
@@ -639,6 +657,16 @@ class AppState: ObservableObject {
     let allowedFileTypes: [UTType] = [
         .pdf,
         .jpeg, .png, .tiff, .bmp, .gif,
+        .heic, .webP,
+        UTType(filenameExtension: "heif")!,
+        UTType(filenameExtension: "dng")!,
+        UTType(filenameExtension: "cr2")!,
+        UTType(filenameExtension: "cr3")!,
+        UTType(filenameExtension: "nef")!,
+        UTType(filenameExtension: "arw")!,
+        UTType(filenameExtension: "orf")!,
+        UTType(filenameExtension: "raf")!,
+        UTType(filenameExtension: "rw2")!,
         .rtf, .plainText,
         UTType(filenameExtension: "doc")!,
         UTType(filenameExtension: "docx")!,
@@ -1189,6 +1217,16 @@ class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    func openPDFToImageDialog() {
+        let pdfs = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !pdfs.isEmpty else {
+            logWarning("Select at least one PDF file to export as images")
+            return
+        }
+        pdfToImageFiles = pdfs
+        showPDFToImageDialog = true
     }
 
     func rasterizePDF() {

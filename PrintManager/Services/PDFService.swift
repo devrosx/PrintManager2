@@ -417,8 +417,48 @@ class PDFService {
         return outputURL
     }
     
+    // MARK: - Export to Images
+
+    func convertToImages(
+        url: URL,
+        dpi: Int,
+        format: ImageExportFormat,
+        jpegQuality: Double = 0.9,
+        progress: @escaping (Double) -> Void
+    ) async throws -> [URL] {
+        guard let pdf = PDFDocument(url: url) else { throw PDFError.invalidPDF }
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let outDir = url.deletingLastPathComponent()
+            .appendingPathComponent("\(baseName)_images")
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+
+        let pageCount = pdf.pageCount
+        let scale = CGFloat(dpi) / 72.0
+        var results: [URL] = []
+
+        for i in 0..<pageCount {
+            guard let page = pdf.page(at: i) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+            let nsImg = page.thumbnail(of: size, for: .mediaBox)
+            guard let cg = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+
+            let pageNum = String(format: "%04d", i + 1)
+            let outURL = outDir.appendingPathComponent("page_\(pageNum).\(format.fileExtension)")
+            guard let dest = CGImageDestinationCreateWithURL(outURL as CFURL, format.utType, 1, nil) else { continue }
+            var props: [CFString: Any] = [:]
+            if format == .jpeg { props[kCGImageDestinationLossyCompressionQuality] = jpegQuality }
+            CGImageDestinationAddImage(dest, cg, props as CFDictionary)
+            CGImageDestinationFinalize(dest)
+
+            results.append(outURL)
+            progress(Double(i + 1) / Double(pageCount))
+        }
+        return results
+    }
+
     // MARK: - Crop PDF
-    
+
     func cropPDF(url: URL, cropBox: CGRect) async throws -> URL {
         guard let pdfDocument = PDFDocument(url: url) else {
             throw PDFError.invalidPDF
@@ -1011,6 +1051,30 @@ class PDFService {
         }
 
         return outputURL
+    }
+}
+
+// MARK: - Image Export Format
+
+enum ImageExportFormat: String, CaseIterable, Codable {
+    case jpeg = "JPEG"
+    case png  = "PNG"
+    case tiff = "TIFF"
+
+    var utType: CFString {
+        switch self {
+        case .jpeg: return kUTTypeJPEG as CFString
+        case .png:  return kUTTypePNG  as CFString
+        case .tiff: return kUTTypeTIFF as CFString
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .jpeg: return "jpg"
+        case .png:  return "png"
+        case .tiff: return "tif"
+        }
     }
 }
 

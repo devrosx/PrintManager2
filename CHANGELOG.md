@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-04-08
+
+### Export PDF to Images
+- Nová funkce v PDF menu (toolbar i kontextové menu): "Export to Images…"
+- Převede všechny stránky PDF do obrázků (JPEG / PNG / TIFF)
+- Výběr rozlišení: 72, 96, 150, 200, 300, 400, 600 DPI
+- Slider kvality pro JPEG (50–100 %)
+- Podporuje hromadné zpracování více PDF najednou
+- Stránky se ukládají do podsložky `<název>_images/` jako `page_0001.jpg` atd.
+- Exportované soubory se automaticky přidají do seznamu
+
 ## 2026-03-26
 
 ### PDF Portfolio import

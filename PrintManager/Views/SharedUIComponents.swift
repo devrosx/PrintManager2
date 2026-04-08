@@ -264,6 +264,7 @@ func pdfActionsMenuContent(_ appState: AppState) -> some View {
     Divider()
     Button("Compress PDF")          { appState.compressPDF() }
     Button("Rasterize PDF")         { appState.rasterizePDF() }
+    Button("Export to Images…")     { appState.openPDFToImageDialog() }
     Button("Resize PDF…")           { appState.resizePDF() }
     Divider()
     Button("Crop PDF/Image")        { appState.cropPDF() }
@@ -308,4 +309,7 @@ func imageActionsMenuContent(_ appState: AppState) -> some View {
     }
     Divider()
     Button("Create Gallery…")             { appState.openGalleryDialog() }
+    if appState.files.filter({ appState.selectedFiles.contains($0.id) && $0.fileType.isImage }).count >= 2 {
+        Button("Create Collage…")         { appState.openCollageDialog() }
+    }
 }
