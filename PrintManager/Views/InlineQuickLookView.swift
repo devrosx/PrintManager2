@@ -409,13 +409,7 @@ struct InlineQuickLookView: View {
                                         isRubberBanding = false
                                     }
                             )
-                            .onTapGesture(count: 2) {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    appState.showInlineQuickLook = false
-                                    appState.quickLookMode = .thumbnails
-                                }
-                            }
-                            .onTapGesture(count: 1) {
+                            .onTapGesture {
                                 selectedPages.removeAll()
                             }
                     )
@@ -499,12 +493,6 @@ struct InlineQuickLookView: View {
                     currentPage: appState.quickLookCurrentPage
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onTapGesture(count: 2) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        appState.showInlineQuickLook = false
-                        appState.quickLookMode = .thumbnails
-                    }
-                }
                 .overlay(
                     HStack(spacing: 0) {
                         // Levá polovina - předchozí strana
