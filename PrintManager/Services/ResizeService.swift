@@ -169,7 +169,7 @@ final class ResizeService {
             resized = ci.transformed(by: .init(scaleX: scaleX, y: scaleY))
         }
 
-        let outURL = overwrite ? url : outputURL(for: url, suffix: "_resized")
+        let outURL = overwrite ? url : outputURL(for: url, suffix: OutputSuffix.resized)
         let ext    = url.pathExtension.lowercased()
         guard let cs = CGColorSpace(name: CGColorSpace.sRGB) else { throw Err.render }
 
@@ -224,7 +224,7 @@ final class ResizeService {
         }
         ctx.closePDF()
 
-        let outURL = overwrite ? url : outputURL(for: url, suffix: "_resized")
+        let outURL = overwrite ? url : outputURL(for: url, suffix: OutputSuffix.resized)
         try (mutableData as Data).write(to: outURL)
         return outURL
     }

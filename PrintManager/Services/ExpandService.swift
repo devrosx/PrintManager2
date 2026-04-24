@@ -47,7 +47,7 @@ final class ExpandService {
     static let shared = ExpandService()
     private init() {}
 
-    private let mmToPt: CGFloat = 2.834645669
+    private let mmToPt: CGFloat = RenderingConstants.pointsPerMillimeter
     private let renderDPI: CGFloat = 300    // DPI pro rasterizaci PDF stránek
 
     // MARK: - Public entry point
@@ -363,7 +363,7 @@ final class ExpandService {
         let dir  = url.deletingLastPathComponent()
         let base = url.deletingPathExtension().lastPathComponent
         let ext  = url.pathExtension
-        return dir.appendingPathComponent("\(base)_expanded.\(ext)")
+        return dir.appendingPathComponent("\(base)\(OutputSuffix.expanded).\(ext)")
     }
 
     private func uniformTypeID(for ext: String) -> String {

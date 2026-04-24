@@ -201,43 +201,12 @@ struct CropView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Margins (points)")
                 .font(.subheadline)
-            
+
             VStack(spacing: 8) {
-                HStack {
-                    Text("Top:")
-                        .frame(width: 50, alignment: .leading)
-                    Slider(value: $topMargin, in: 0...pageSize.height/2)
-                        .onChange(of: topMargin) { _ in updateCropFromMargins() }
-                    Text("\(Int(topMargin))")
-                        .frame(width: 30)
-                }
-                
-                HStack {
-                    Text("Bottom:")
-                        .frame(width: 50, alignment: .leading)
-                    Slider(value: $bottomMargin, in: 0...pageSize.height/2)
-                        .onChange(of: bottomMargin) { _ in updateCropFromMargins() }
-                    Text("\(Int(bottomMargin))")
-                        .frame(width: 30)
-                }
-                
-                HStack {
-                    Text("Left:")
-                        .frame(width: 50, alignment: .leading)
-                    Slider(value: $leftMargin, in: 0...pageSize.width/2)
-                        .onChange(of: leftMargin) { _ in updateCropFromMargins() }
-                    Text("\(Int(leftMargin))")
-                        .frame(width: 30)
-                }
-                
-                HStack {
-                    Text("Right:")
-                        .frame(width: 50, alignment: .leading)
-                    Slider(value: $rightMargin, in: 0...pageSize.width/2)
-                        .onChange(of: rightMargin) { _ in updateCropFromMargins() }
-                    Text("\(Int(rightMargin))")
-                        .frame(width: 30)
-                }
+                MarginSliderRow(label: "Top:",    value: $topMargin,    maxValue: pageSize.height / 2, onChange: updateCropFromMargins)
+                MarginSliderRow(label: "Bottom:", value: $bottomMargin, maxValue: pageSize.height / 2, onChange: updateCropFromMargins)
+                MarginSliderRow(label: "Left:",   value: $leftMargin,   maxValue: pageSize.width  / 2, onChange: updateCropFromMargins)
+                MarginSliderRow(label: "Right:",  value: $rightMargin,  maxValue: pageSize.width  / 2, onChange: updateCropFromMargins)
             }
             
             // Quick preset buttons
@@ -1192,6 +1161,26 @@ enum CropError: LocalizedError {
             return "Crop operation failed"
         case .saveFailed:
             return "Failed to save cropped file"
+        }
+    }
+}
+
+// MARK: - Reusable margin slider row
+
+private struct MarginSliderRow: View {
+    let label: String
+    @Binding var value: Double
+    let maxValue: Double
+    let onChange: () -> Void
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .frame(width: 50, alignment: .leading)
+            Slider(value: $value, in: 0...max(1, maxValue))
+                .onChange(of: value) { _ in onChange() }
+            Text("\(Int(value))")
+                .frame(width: 30)
         }
     }
 }

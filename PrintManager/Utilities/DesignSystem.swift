@@ -162,5 +162,6 @@ enum UDKeys {
     static let hiddenColumns = "pm.hiddenColumns"
     static let fileSortKey = "pm.fileSortKey"
     static let fileSortAscending = "pm.fileSortAscending"
+    static let thumbnailSize = "pm.thumbnailSize"
     static func presetCache(printer: String) -> String { "pm.cache.presets.\(printer)" }
 }

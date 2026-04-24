@@ -190,17 +190,17 @@ struct TilePDFDialog: View {
         guard let ref = files.first, ref.pageSize != .zero else { return nil }
         let ptW = ref.pageSize.width
         let ptH = ref.pageSize.height
-        let sp  = options.spacingMm * 2.834645669
+        let sp  = options.spacingMm * RenderingConstants.pointsPerMillimeter
         let n   = Double(effectiveCount)
 
         let (outWmm, outHmm): (Double, Double)
         switch options.direction {
         case .horizontal:
-            outWmm = (ptW * n + sp * (n - 1)) / 2.834645669
-            outHmm = ptH / 2.834645669
+            outWmm = (ptW * n + sp * (n - 1)) / RenderingConstants.pointsPerMillimeter
+            outHmm = ptH / RenderingConstants.pointsPerMillimeter
         case .vertical:
-            outWmm = ptW / 2.834645669
-            outHmm = (ptH * n + sp * (n - 1)) / 2.834645669
+            outWmm = ptW / RenderingConstants.pointsPerMillimeter
+            outHmm = (ptH * n + sp * (n - 1)) / RenderingConstants.pointsPerMillimeter
         }
         return String(format: "Výsledek: %.0f × %.0f mm  (%d×)", outWmm, outHmm, effectiveCount)
     }

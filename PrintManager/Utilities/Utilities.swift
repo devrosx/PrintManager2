@@ -9,6 +9,39 @@ import Foundation
 import SwiftUI
 import AppKit
 
+// MARK: - Operation State
+
+/// Shared state pattern for async operations in dialogs.
+/// Provides consistent progress tracking and error reporting.
+/// Usage: `@StateObject private var op = OperationState()`
+final class OperationState: ObservableObject {
+    @Published var isProcessing = false
+    @Published var progress: Double = 0
+    @Published var errorMessage: String? = nil
+    @Published var showError = false
+
+    func start() {
+        isProcessing = true
+        progress = 0
+        errorMessage = nil
+    }
+
+    func finish() {
+        isProcessing = false
+        progress = 1
+    }
+
+    func fail(with error: Error) {
+        isProcessing = false
+        errorMessage = error.localizedDescription
+        showError = true
+    }
+
+    func updateProgress(_ value: Double) {
+        progress = value
+    }
+}
+
 // MARK: - File Utilities
 
 func humansize(_ bytes: Int64) -> String {

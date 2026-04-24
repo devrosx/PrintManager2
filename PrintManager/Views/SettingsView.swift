@@ -291,15 +291,16 @@ struct PrintingSettingsView: View {
     }
 
     private func enableCUPS() {
-        let cmd = "launchctl load -w /System/Library/LaunchDaemons/org.cups.cupsd.plist"
-        runPrivileged(cmd) { success, error in
+        Task {
+            let (success, error) = await runPrivileged("launchctl load -w /System/Library/LaunchDaemons/org.cups.cupsd.plist")
             cupsEnableResult = success ? .ok : .failed(error ?? NSLocalizedString("Chyba", comment: ""))
             if success { checkCUPSStatus() }
         }
     }
 
     private func fixMaxJobTime() {
-        runPrivileged("cupsctl MaxJobTime=0") { success, error in
+        Task {
+            let (success, error) = await runPrivileged("cupsctl MaxJobTime=0")
             maxJobTimeResult = success ? .ok : .failed(error ?? NSLocalizedString("Chyba", comment: ""))
         }
     }
@@ -319,15 +320,18 @@ struct PrintingSettingsView: View {
     }
 
     // Spustí privilegovaný příkaz přes AppleScript (zobrazí macOS dialog pro heslo)
-    private func runPrivileged(_ command: String, completion: @escaping (Bool, String?) -> Void) {
-        DispatchQueue.global().async {
-            let escaped = command.replacingOccurrences(of: "\"", with: "\\\"")
-            let src = "do shell script \"\(escaped)\" with administrator privileges"
-            var error: NSDictionary?
-            NSAppleScript(source: src)?.executeAndReturnError(&error)
-            let success = error == nil
-            let msg = error?[NSAppleScript.errorBriefMessage] as? String
-            DispatchQueue.main.async { completion(success, msg) }
+    @MainActor
+    private func runPrivileged(_ command: String) async -> (Bool, String?) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                let escaped = command.replacingOccurrences(of: "\"", with: "\\\"")
+                let src = "do shell script \"\(escaped)\" with administrator privileges"
+                var error: NSDictionary?
+                NSAppleScript(source: src)?.executeAndReturnError(&error)
+                let success = error == nil
+                let msg = error?[NSAppleScript.errorBriefMessage] as? String
+                continuation.resume(returning: (success, msg))
+            }
         }
     }
 }

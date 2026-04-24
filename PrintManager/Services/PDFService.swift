@@ -89,7 +89,7 @@ class PDFService {
     
     func compressPDF(url: URL, settings: CompressionSettings) async throws -> URL {
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_compressed")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.compressed)
             .appendingPathExtension("pdf")
         
         let startTime = Date()
@@ -108,25 +108,19 @@ class PDFService {
         }
         
         // Method 1: Use Ghostscript if available (best quality)
-        if let ghostscriptResult = try? await compressWithGhostscript(url: url, outputURL: outputURL, settings: settings) {
-            let result = try await processCompressionResult(
-                inputURL: url,
-                outputURL: ghostscriptResult,
-                startTime: startTime,
-                warnings: warnings
-            )
-            return result
+        do {
+            let ghostscriptResult = try await compressWithGhostscript(url: url, outputURL: outputURL, settings: settings)
+            return try await processCompressionResult(inputURL: url, outputURL: ghostscriptResult, startTime: startTime, warnings: warnings)
+        } catch {
+            print("[PDFService] Ghostscript compression failed: \(error.localizedDescription), trying Quartz")
         }
-        
+
         // Method 2: Use Quartz PDFKit with custom settings
-        if let quartzResult = try? await compressWithQuartz(url: url, outputURL: outputURL, settings: settings) {
-            let result = try await processCompressionResult(
-                inputURL: url,
-                outputURL: quartzResult,
-                startTime: startTime,
-                warnings: warnings
-            )
-            return result
+        do {
+            let quartzResult = try await compressWithQuartz(url: url, outputURL: outputURL, settings: settings)
+            return try await processCompressionResult(inputURL: url, outputURL: quartzResult, startTime: startTime, warnings: warnings)
+        } catch {
+            print("[PDFService] Quartz compression failed: \(error.localizedDescription), falling back to system convert")
         }
         
         // Method 3: Fallback to system conversion
@@ -310,7 +304,7 @@ class PDFService {
         }
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_ocr")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.ocr)
             .appendingPathExtension("pdf")
         
         let newDocument = PDFDocument()
@@ -390,7 +384,7 @@ class PDFService {
         }
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_rasterized")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.rasterized)
             .appendingPathExtension("pdf")
         
         let newDocument = PDFDocument()
@@ -413,10 +407,12 @@ class PDFService {
             newDocument.insert(newPage, at: pageIndex)
         }
         
-        newDocument.write(to: outputURL)
+        guard newDocument.write(to: outputURL) else {
+            throw PDFError.operationFailed("Failed to write resized PDF to disk")
+        }
         return outputURL
     }
-    
+
     // MARK: - Export to Images
 
     func convertToImages(
@@ -437,22 +433,24 @@ class PDFService {
         var results: [URL] = []
 
         for i in 0..<pageCount {
-            guard let page = pdf.page(at: i) else { continue }
-            let bounds = page.bounds(for: .mediaBox)
-            let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-            let nsImg = page.thumbnail(of: size, for: .mediaBox)
-            guard let cg = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+            autoreleasepool {
+                guard let page = pdf.page(at: i) else { return }
+                let bounds = page.bounds(for: .mediaBox)
+                let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+                let nsImg = page.thumbnail(of: size, for: .mediaBox)
+                guard let cg = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
 
-            let pageNum = String(format: "%04d", i + 1)
-            let outURL = outDir.appendingPathComponent("page_\(pageNum).\(format.fileExtension)")
-            guard let dest = CGImageDestinationCreateWithURL(outURL as CFURL, format.utType, 1, nil) else { continue }
-            var props: [CFString: Any] = [:]
-            if format == .jpeg { props[kCGImageDestinationLossyCompressionQuality] = jpegQuality }
-            CGImageDestinationAddImage(dest, cg, props as CFDictionary)
-            CGImageDestinationFinalize(dest)
+                let pageNum = String(format: "%04d", i + 1)
+                let outURL = outDir.appendingPathComponent("page_\(pageNum).\(format.fileExtension)")
+                guard let dest = CGImageDestinationCreateWithURL(outURL as CFURL, format.utType, 1, nil) else { return }
+                var props: [CFString: Any] = [:]
+                if format == .jpeg { props[kCGImageDestinationLossyCompressionQuality] = jpegQuality }
+                CGImageDestinationAddImage(dest, cg, props as CFDictionary)
+                CGImageDestinationFinalize(dest)
 
-            results.append(outURL)
-            progress(Double(i + 1) / Double(pageCount))
+                results.append(outURL)
+                progress(Double(i + 1) / Double(pageCount))
+            }
         }
         return results
     }
@@ -465,7 +463,7 @@ class PDFService {
         }
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_cropped")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.cropped)
             .appendingPathExtension("pdf")
         
         for pageIndex in 0..<pdfDocument.pageCount {
@@ -473,10 +471,12 @@ class PDFService {
             page.setBounds(cropBox, for: .cropBox)
         }
         
-        pdfDocument.write(to: outputURL)
+        guard pdfDocument.write(to: outputURL) else {
+            throw PDFError.operationFailed("Failed to write cropped PDF to disk")
+        }
         return outputURL
     }
-    
+
     // MARK: - Rotate PDF
     
     func rotatePDF(url: URL, degrees: Double) async throws -> URL {
@@ -485,7 +485,7 @@ class PDFService {
         }
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_rotated")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.rotated)
             .appendingPathExtension("pdf")
         
         // Convert degrees to rotation (0, 90, 180, 270)
@@ -512,10 +512,12 @@ class PDFService {
             page.rotation = newRotation
         }
         
-        pdfDocument.write(to: outputURL)
+        guard pdfDocument.write(to: outputURL) else {
+            throw PDFError.operationFailed("Failed to write rotated PDF to disk")
+        }
         return outputURL
     }
-    
+
     // MARK: - Extract Images
     
     func extractImages(url: URL) async throws -> [URL] {
@@ -577,7 +579,7 @@ class PDFService {
         let isImage = ["jpg", "jpeg", "png", "tiff", "tif", "bmp", "gif"].contains(fileExtension)
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_gray")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.gray)
             .appendingPathExtension(isImage ? fileExtension : "pdf")
         
         // Check if Ghostscript is available
@@ -642,7 +644,7 @@ class PDFService {
         }
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_flattened")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.flattened)
             .appendingPathExtension("pdf")
         
         // Check if Ghostscript is available
@@ -673,7 +675,7 @@ class PDFService {
         }
 
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_fixed")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.fixed)
             .appendingPathExtension("pdf")
 
         guard isGSAvailable() else {

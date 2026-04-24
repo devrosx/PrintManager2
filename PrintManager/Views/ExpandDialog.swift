@@ -159,8 +159,8 @@ struct ExpandDialog: View {
     // MARK: - Výpočet výsledné velikosti (informativní)
 
     private var resultSizeText: String? {
-        let wMm = file.pageSize.width  / 2.834645669 + expandMm * 2
-        let hMm = file.pageSize.height / 2.834645669 + expandMm * 2
+        let wMm = file.pageSize.width  / RenderingConstants.pointsPerMillimeter + expandMm * 2
+        let hMm = file.pageSize.height / RenderingConstants.pointsPerMillimeter + expandMm * 2
         guard wMm > 0, hMm > 0 else { return nil }
         return String(format: "Výsledná velikost: %.1f × %.1f mm", wMm, hMm)
     }

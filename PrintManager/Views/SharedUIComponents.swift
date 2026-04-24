@@ -182,6 +182,46 @@ struct SectionHeader<Trailing: View>: View {
     }
 }
 
+// MARK: - ProcessingOverlay Modifier
+
+/// Překryvná vrstva zobrazující spinner a popisek během zpracování.
+/// Blokuje interakci s podkladovým obsahem dokud `isProcessing == true`.
+struct ProcessingOverlayModifier: ViewModifier {
+    @Binding var isProcessing: Bool
+    var label: String
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if isProcessing {
+                ZStack {
+                    Color.black.opacity(0.35)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text(label)
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+        .allowsHitTesting(!isProcessing)
+    }
+}
+
+extension View {
+    /// Zobrazí překryvný spinner s popiskem během zpracování.
+    /// - Parameters:
+    ///   - isProcessing: Binding na stav zpracování; `true` zobrazí overlay.
+    ///   - label: Text zobrazený pod spinnerem.
+    func processingOverlay(isProcessing: Binding<Bool>, label: String = "Zpracovávám…") -> some View {
+        modifier(ProcessingOverlayModifier(isProcessing: isProcessing, label: label))
+    }
+}
+
 // MARK: - Cursor Modifier
 
 /// Custom cursor modifier for SwiftUI views
@@ -278,6 +318,8 @@ func pdfActionsMenuContent(_ appState: AppState) -> some View {
     Divider()
     Button("Expand (Bleed)…")       { appState.expandFileAction() }
     Divider()
+    Button("Fix Background…")       { appState.openBackgroundFixDialog() }
+    Divider()
     Button("Watermark…")            { appState.openWatermarkDialog() }
     Divider()
     Button("PDF Info")              { appState.showPDFInfo() }
@@ -290,6 +332,7 @@ func imageActionsMenuContent(_ appState: AppState) -> some View {
     Button("Crop Image")                  { appState.cropPDF() }
     Button("Smart Crop")                  { appState.smartCropFiles() }
     Button("MultiCrop")                   { appState.openMultiCrop() }
+    Button("LineArt Crop…")               { appState.openLineArtCropDialog() }
     Divider()
     Button("Expand (Bleed)…")             { appState.expandFileAction() }
     Divider()

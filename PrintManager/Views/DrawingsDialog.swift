@@ -545,7 +545,7 @@ private struct DrawingsFileRow: View {
     let file: FileItem; let isActive: Bool
     var body: some View {
         HStack(spacing: 8) {
-            if let t = file.thumbnail {
+            if let t = ThumbnailCache.shared.thumbnail(for: file.url) {
                 Image(nsImage: t).resizable().aspectRatio(contentMode: .fit)
                     .frame(width: 34, height: 34).cornerRadius(DS.Radius.small)
             } else {

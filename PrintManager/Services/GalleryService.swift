@@ -21,7 +21,7 @@ class GalleryService {
 
     // MARK: - pt konverze
 
-    private let mmToPt: Double = 2.834645669
+    private let mmToPt: Double = RenderingConstants.pointsPerMillimeter
     private let ciCtx  = CIContext(options: [.useSoftwareRenderer: false])
 
     // MARK: - Public API
@@ -472,13 +472,22 @@ class GalleryService {
 
     // MARK: - Popisek pod obrázkem
 
+    /// Odstraní číslo na konci názvu (např. "Felix Slováček 2" → "Felix Slováček").
+    static func stripTrailingNumber(_ s: String) -> String {
+        guard let range = s.range(of: #"\s+\d+$"#, options: .regularExpression) else { return s }
+        return String(s[..<range.lowerBound])
+    }
+
     private func drawLabel(
         for state: GalleryImageState,
         in rect: CGRect,
         settings: GallerySettings,
         ctx: CGContext
     ) {
-        let filename = state.displayLabel
+        var filename = state.displayLabel
+        if settings.labelStripNumbers {
+            filename = GalleryService.stripTrailingNumber(filename)
+        }
 
         // Pozadí popisku (pokud není průhledné)
         let bgNS = NSColor(settings.labelBackground)
@@ -501,15 +510,29 @@ class GalleryService {
         ]
         let str = NSAttributedString(string: filename, attributes: attrs)
 
-        // Vertikálně vystředit text v oblasti popisku (Y-up souřadnice)
+        // Odsazení textu (padding) – konverze z mm na pt
+        let padTop    = settings.labelPadTop    * mmToPt
+        let padBottom = settings.labelPadBottom * mmToPt
+        let padLeft   = settings.labelPadLeft   * mmToPt
+        let padRight  = settings.labelPadRight  * mmToPt
+
+        // Textová oblast s paddingem (Y-up souřadnice: padTop zmenšuje maxY, padBottom zmenšuje minY)
+        let textRect = CGRect(
+            x:      rect.minX + padLeft,
+            y:      rect.minY + padBottom,
+            width:  max(1, rect.width  - padLeft - padRight),
+            height: max(1, rect.height - padTop  - padBottom)
+        )
+
+        // Vertikálně vystředit text v oblasti s paddingem
         let textH = str.size().height
-        let textY = rect.minY + (rect.height - textH) / 2
+        let textY = textRect.minY + (textRect.height - textH) / 2
 
         let nsCtx = NSGraphicsContext(cgContext: ctx, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsCtx
-        str.draw(in: CGRect(x: rect.minX + 2, y: textY,
-                            width: rect.width - 4, height: textH))
+        str.draw(in: CGRect(x: textRect.minX, y: textY,
+                            width: textRect.width, height: textH))
         NSGraphicsContext.restoreGraphicsState()
     }
 

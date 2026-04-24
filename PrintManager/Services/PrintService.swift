@@ -60,7 +60,7 @@ class PrintService {
 
     private func buildPrintInfo(settings: PrintSettings) -> NSPrintInfo {
         // Kopie shared info — lepší základ než NSPrintInfo() (zachová papír atd.)
-        let pi = NSPrintInfo.shared.copy() as! NSPrintInfo
+        let pi = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
 
         // Tiskárna — nastav pokud je zvolena
         if !settings.printer.isEmpty {

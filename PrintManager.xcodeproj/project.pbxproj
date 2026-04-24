@@ -90,6 +90,11 @@
 		VIEWREF021 /* CollagePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLPREVRF /* CollagePreviewView.swift */; };
 		VIEWREF022 /* CollageDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = COLLDIALRF /* CollageDialog.swift */; };
 		PDFIMGBFRF /* PDFToImageDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = PDFIMGDLRF /* PDFToImageDialog.swift */; };
+		BGFIXSRVBF /* BackgroundFixService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BGFIXSRVRF /* BackgroundFixService.swift */; };
+		BGFIXDLGBF /* BackgroundFixDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BGFIXDLGRF /* BackgroundFixDialog.swift */; };
+		SCPT000002 /* lineart_crop.py in Resources */ = {isa = PBXBuildFile; fileRef = SCPTFILE02 /* lineart_crop.py */; };
+		LARTCRSRBF /* LineArtCropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = LARTCRSRRF /* LineArtCropService.swift */; };
+		LARTCRDLBF /* LineArtCropDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = LARTCRDLRF /* LineArtCropDialog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -178,6 +183,11 @@
 		COLLPREVRF /* CollagePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollagePreviewView.swift; sourceTree = "<group>"; };
 		COLLDIALRF /* CollageDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollageDialog.swift; sourceTree = "<group>"; };
 		PDFIMGDLRF /* PDFToImageDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFToImageDialog.swift; sourceTree = "<group>"; };
+		BGFIXSRVRF /* BackgroundFixService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundFixService.swift; sourceTree = "<group>"; };
+		BGFIXDLGRF /* BackgroundFixDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundFixDialog.swift; sourceTree = "<group>"; };
+		SCPTFILE02 /* lineart_crop.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = lineart_crop.py; sourceTree = "<group>"; };
+		LARTCRSRRF /* LineArtCropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineArtCropService.swift; sourceTree = "<group>"; };
+		LARTCRDLRF /* LineArtCropDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineArtCropDialog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -254,6 +264,7 @@
 			isa = PBXGroup;
 			children = (
 				SCPTFILE01 /* multicrop_cv2.py */,
+				SCPTFILE02 /* lineart_crop.py */,
 			);
 			path = Scripts;
 			sourceTree = "<group>";
@@ -296,6 +307,8 @@
 				SERVREF027 /* GalleryInDesignService.swift */,
 				SERVREF028 /* PDFPortfolioExtractor.swift */,
 				COLLSERVRF /* CollageService.swift */,
+				BGFIXSRVRF /* BackgroundFixService.swift */,
+				LARTCRSRRF /* LineArtCropService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -341,6 +354,8 @@
 				COLLPREVRF /* CollagePreviewView.swift */,
 				COLLDIALRF /* CollageDialog.swift */,
 				PDFIMGDLRF /* PDFToImageDialog.swift */,
+				BGFIXDLGRF /* BackgroundFixDialog.swift */,
+				LARTCRDLRF /* LineArtCropDialog.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -421,6 +436,7 @@
 			files = (
 				MAIN000002 /* Assets.xcassets in Resources */,
 				SCPT000001 /* multicrop_cv2.py in Resources */,
+				SCPT000002 /* lineart_crop.py in Resources */,
 				LOC000001 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -512,6 +528,10 @@
 				VIEWREF021 /* CollagePreviewView.swift in Sources */,
 				VIEWREF022 /* CollageDialog.swift in Sources */,
 				PDFIMGBFRF /* PDFToImageDialog.swift in Sources */,
+				BGFIXSRVBF /* BackgroundFixService.swift in Sources */,
+				BGFIXDLGBF /* BackgroundFixDialog.swift in Sources */,
+				LARTCRSRBF /* LineArtCropService.swift in Sources */,
+				LARTCRDLBF /* LineArtCropDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

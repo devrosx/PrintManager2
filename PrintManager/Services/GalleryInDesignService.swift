@@ -91,7 +91,10 @@ class GalleryInDesignService {
             let totalRot = (autoRot + state.extraRotation) % 360
 
             let (bgC, bgM, bgY, bgK) = cmyk(state.fitBackground)
-            let label = state.displayLabel
+            var label = state.displayLabel
+            if settings.labelStripNumbers {
+                label = GalleryService.stripTrailingNumber(label)
+            }
             let sep = i < images.count - 1 ? "," : ""
             imgArray += "  {path:\(js(state.url.path)),fit:\(state.fitMode ? "true" : "false"),rot:\(totalRot),bgC:\(f(bgC)),bgM:\(f(bgM)),bgY:\(f(bgY)),bgK:\(f(bgK)),label:\(js(label))}\(sep)\n"
         }
@@ -102,7 +105,7 @@ class GalleryInDesignService {
         if settings.addCropMarks {
             let len = settings.cropMarkLength, off = settings.cropMarkOffset
             // strokeWeight v InDesignu (při measurementUnit=mm) bere mm, ne pt
-            let lw  = settings.cropMarkWidth / 2.834645669
+            let lw  = settings.cropMarkWidth / RenderingConstants.pointsPerMillimeter
             cropMarkJS = """
             // Ořezové značky
             try {
@@ -135,7 +138,7 @@ class GalleryInDesignService {
 """ : ""
 
         // frameBorderWidth je v pt; InDesign s mm-jednotkami bere strokeWeight v mm
-        let borderWidthMM = settings.frameBorderWidth / 2.834645669
+        let borderWidthMM = settings.frameBorderWidth / RenderingConstants.pointsPerMillimeter
         let (brdC, brdM, brdY, brdK) = cmyk(settings.frameBorderColor)
         let addBorderInLoop = settings.addFrameBorder ? """
                     try {
@@ -173,10 +176,13 @@ class GalleryInDesignService {
         let labelH      = settings.effectiveLabelHeightMM   // 0 pokud inside
         let labelAreaH  = settings.labelAreaHeightMM        // vždy fyzická výška
         let (lblC, lblM, lblY, lblK) = cmyk(settings.labelColor)
+        // Pozadí popisku: pokud je průhledné, použijeme InDesign "None" swatch
+        let bgNSLabel = NSColor(settings.labelBackground).usingColorSpace(.sRGB)
+        let bgLabelIsTransparent = (bgNSLabel?.alphaComponent ?? 0) < 0.02
         let (bgLC, bgLM, bgLY, bgLK) = cmyk(settings.labelBackground)
         let addLabelInLoop: String
         if settings.showImageLabel {
-            let fontSizeMM    = settings.labelFontSize / 2.834645669
+            let fontSizeMM    = settings.labelFontSize / RenderingConstants.pointsPerMillimeter
             let justification = settings.labelAlignment.indesignJustification
             // Poloha: inside = spodní pruh obrázku, outside = pod obrázkem
             let topExpr    = settings.labelInside
@@ -185,6 +191,17 @@ class GalleryInDesignService {
             let bottomExpr = settings.labelInside
                 ? "(fy+FRAME_H)"
                 : "(fy+FRAME_H+\(f(labelAreaH)))"
+            // Padding (insetSpacing: [top, left, bottom, right] v mm)
+            let padT = settings.labelPadTop, padL = settings.labelPadLeft
+            let padB = settings.labelPadBottom, padR = settings.labelPadRight
+            let bgFillJS = bgLabelIsTransparent
+                ? "lf.fillColor = doc.swatches.itemByName(\"None\");"
+                : """
+                        var bgLSwatch = doc.colors.add();
+                        bgLSwatch.model = ColorModel.PROCESS;
+                        bgLSwatch.colorValue = [\(f(bgLC)), \(f(bgLM)), \(f(bgLY)), \(f(bgLK))];
+                        lf.fillColor = bgLSwatch;
+"""
             addLabelInLoop = """
                     // Popisek \(settings.labelInside ? "uvnitř obrázku" : "pod obrázkem")
                     try {
@@ -199,11 +216,10 @@ class GalleryInDesignService {
                         lblColor.model = ColorModel.PROCESS;
                         lblColor.colorValue = [\(f(lblC)), \(f(lblM)), \(f(lblY)), \(f(lblK))];
                         lblPara.fillColor = lblColor;
-                        var bgLSwatch = doc.colors.add();
-                        bgLSwatch.model = ColorModel.PROCESS;
-                        bgLSwatch.colorValue = [\(f(bgLC)), \(f(bgLM)), \(f(bgLY)), \(f(bgLK))];
-                        lf.fillColor = bgLSwatch;
+                        \(bgFillJS)
                         lf.strokeColor = doc.swatches.itemByName("None");
+                        // Odsazení textu (padding)
+                        lf.textFramePreferences.insetSpacing = ["\(f(padT))mm", "\(f(padL))mm", "\(f(padB))mm", "\(f(padR))mm"];
                         // Vertikální zarovnání na střed
                         lf.textFramePreferences.verticalJustification = VerticalJustification.CENTER_ALIGN;
                     } catch(e) {}

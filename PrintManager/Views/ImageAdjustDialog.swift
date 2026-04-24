@@ -93,6 +93,7 @@ struct ImageAdjustDialog: View {
             savedW = sz.width
             savedH = sz.height
         })
+        .processingOverlay(isProcessing: $isProcessing)
         .onAppear { scheduleRender() }
     }
 
@@ -536,7 +537,7 @@ private struct AdjFileRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Group {
-                if let thumb = file.thumbnail {
+                if let thumb = ThumbnailCache.shared.thumbnail(for: file.url) {
                     Image(nsImage: thumb).resizable().scaledToFill()
                 } else {
                     Color.secondary.opacity(0.12)

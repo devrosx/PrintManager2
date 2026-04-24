@@ -58,7 +58,7 @@ class ImageService {
         let resizedImage = image.resized(to: newSize)
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_resized")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.resized)
             .appendingPathExtension(url.pathExtension)
 
         try saveImage(resizedImage, to: outputURL)
@@ -71,6 +71,7 @@ class ImageService {
         }
         
         let currentSize = image.size
+        guard currentSize.height > 0 else { throw ImageError.invalidImage }
         let aspectRatio = currentSize.width / currentSize.height
         
         var newSize: NSSize
@@ -83,7 +84,7 @@ class ImageService {
         let resizedImage = image.resized(to: newSize)
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_resized")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.resized)
             .appendingPathExtension(url.pathExtension)
 
         try saveImage(resizedImage, to: outputURL)
@@ -107,7 +108,7 @@ class ImageService {
         let outputImage = NSImage(cgImage: outputCGImage, size: NSSize(width: outputCGImage.width, height: outputCGImage.height))
         
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_rotated")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.rotated)
             .appendingPathExtension(url.pathExtension)
         
         try saveImage(outputImage, to: outputURL)
@@ -261,7 +262,7 @@ class ImageService {
         }
         let finalImage = NSImage(cgImage: outputCGImage, size: NSSize(width: outputCGImage.width, height: outputCGImage.height))
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_grayscale")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.gray)
             .appendingPathExtension(url.pathExtension)
         
         try saveImage(finalImage, to: outputURL)

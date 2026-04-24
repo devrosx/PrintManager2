@@ -290,6 +290,7 @@ final class ResizeDialogViewModel: ObservableObject {
 // MARK: - Dialog View
 
 struct ResizeDialog: View {
+    @EnvironmentObject private var appState: AppState
     @Binding var isPresented: Bool
     @StateObject private var vm: ResizeDialogViewModel
 
@@ -545,7 +546,10 @@ struct ResizeDialog: View {
 
             Button {
                 vm.resize(onFileDone: { _ in }) { count in
-                    if count > 0 { isPresented = false }
+                    if count > 0 {
+                        appState.notifyConversionComplete(fileCount: vm.files.count, successCount: count)
+                        isPresented = false
+                    }
                 }
             } label: {
                 Label("Změnit velikost", systemImage: "arrow.up.left.and.arrow.down.right")

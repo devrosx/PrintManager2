@@ -11,6 +11,7 @@
 import SwiftUI
 import AppKit
 import PDFKit
+import UniformTypeIdentifiers
 
 // MARK: - Thumbnail Frame Preference Key
 
@@ -340,7 +341,7 @@ struct InlineQuickLookView: View {
 
                                 let provider = NSItemProvider(object: "\(pageIndex)" as NSString)
 
-                                // Registrace PDF pro drag na plochu/Finder
+                                // Registrace PDF pro drag na plochu/Finder + Apps/Printers
                                 if file.fileType == .pdf {
                                     let capturedFile = file
                                     let capturedPages = pagesToDrag
@@ -408,7 +409,13 @@ struct InlineQuickLookView: View {
                                         isRubberBanding = false
                                     }
                             )
-                            .onTapGesture {
+                            .onTapGesture(count: 2) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    appState.showInlineQuickLook = false
+                                    appState.quickLookMode = .thumbnails
+                                }
+                            }
+                            .onTapGesture(count: 1) {
                                 selectedPages.removeAll()
                             }
                     )
@@ -492,6 +499,12 @@ struct InlineQuickLookView: View {
                     currentPage: appState.quickLookCurrentPage
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onTapGesture(count: 2) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        appState.showInlineQuickLook = false
+                        appState.quickLookMode = .thumbnails
+                    }
+                }
                 .overlay(
                     HStack(spacing: 0) {
                         // Levá polovina - předchozí strana

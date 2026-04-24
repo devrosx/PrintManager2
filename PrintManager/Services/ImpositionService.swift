@@ -32,7 +32,7 @@ final class ImpositionService {
     static let shared = ImpositionService()
     private init() {}
 
-    let mmToPt: CGFloat = 2.834645669
+    let mmToPt: CGFloat = RenderingConstants.pointsPerMillimeter
 
     // MARK: - Public entry point
 
@@ -558,6 +558,6 @@ final class ImpositionService {
     private func outputURL(for sourceURL: URL) -> URL {
         let dir      = sourceURL.deletingLastPathComponent()
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
-        return dir.appendingPathComponent("\(baseName)_imposed.pdf")
+        return dir.appendingPathComponent("\(baseName)\(OutputSuffix.imposed).pdf")
     }
 }

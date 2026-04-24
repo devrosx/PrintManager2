@@ -114,9 +114,15 @@ struct ContentView: View {
                     .environmentObject(appState)
             }
         }
+        .sheet(isPresented: $appState.showLineArtCropDialog) {
+            if let file = appState.lineArtCropFile {
+                LineArtCropDialog(isPresented: $appState.showLineArtCropDialog, file: file)
+                    .environmentObject(appState)
+            }
+        }
         .sheet(isPresented: $appState.showColorPageSelector) {
-            if let file = appState.colorPageSelectorFile {
-                ColorPageSelectorView(isPresented: $appState.showColorPageSelector, file: file)
+            if !appState.colorPageSelectorQueue.isEmpty {
+                ColorPageSelectorView(isPresented: $appState.showColorPageSelector, files: appState.colorPageSelectorQueue)
                     .environmentObject(appState)
             }
         }
@@ -202,10 +208,18 @@ struct ContentView: View {
                 .environmentObject(appState)
             }
         }
+        .sheet(isPresented: $appState.showBackgroundFixDialog) {
+            if !appState.backgroundFixFiles.isEmpty {
+                BackgroundFixDialog(isPresented: $appState.showBackgroundFixDialog,
+                                    pdfFiles: appState.backgroundFixFiles)
+                    .environmentObject(appState)
+                    .id(appState.backgroundFixFiles.map(\.id.uuidString).joined())
+            }
+        }
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 // Cmd+I to toggle preview
-                if event.modifierFlags.contains(.command) && event.keyCode == 34 { // 34 = I key
+                if event.modifierFlags.contains(.command) && event.characters == "i" {
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             appState.showPreview.toggle()
@@ -911,19 +925,35 @@ struct PrinterRowView: View {
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { onOpenQueue() }
         .onTapGesture(count: 1) { onSelect() }
-        .onDrop(of: [.fileURL], isTargeted: onDropFiles != nil ? $isDropTargeted : .constant(false)) { providers in
+        .onDrop(of: [.fileURL, .pdf], isTargeted: onDropFiles != nil ? $isDropTargeted : .constant(false)) { providers in
             guard let handler = onDropFiles else { return false }
             let group = DispatchGroup()
             var dropped: [URL] = []
             let q = DispatchQueue(label: "pm.printerrow.drop")
             for provider in providers {
                 group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    defer { group.leave() }
-                    if let data = item as? Data,
-                       let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        q.sync { dropped.append(url) }
+                if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                        defer { group.leave() }
+                        if let url = item as? URL {
+                            q.sync { dropped.append(url) }
+                        } else if let nsURL = item as? NSURL, let url = nsURL as URL? {
+                            q.sync { dropped.append(url) }
+                        } else if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                            q.sync { dropped.append(url) }
+                        }
                     }
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+                    provider.loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { url, _ in
+                        defer { group.leave() }
+                        guard let url else { return }
+                        let dest = FileManager.default.temporaryDirectory
+                            .appendingPathComponent(url.lastPathComponent)
+                        try? FileManager.default.copyItem(at: url, to: dest)
+                        q.sync { dropped.append(dest) }
+                    }
+                } else {
+                    group.leave()
                 }
             }
             group.notify(queue: .main) {
@@ -1017,18 +1047,34 @@ struct AppRowView: View {
         .onTapGesture(count: 2) { appState.openSelectedFilesInApp(app) }
         .onTapGesture(count: 1) { onSelect() }
         // Drop zóna — přetáhni soubory z Finderu nebo jiné aplikace
-        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+        .onDrop(of: [.fileURL, .pdf], isTargeted: $isDropTargeted) { providers in
             let group = DispatchGroup()
             var dropped: [URL] = []
             let q = DispatchQueue(label: "pm.approw.drop")
             for provider in providers {
                 group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    defer { group.leave() }
-                    if let data = item as? Data,
-                       let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        q.sync { dropped.append(url) }
+                if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                        defer { group.leave() }
+                        if let url = item as? URL {
+                            q.sync { dropped.append(url) }
+                        } else if let nsURL = item as? NSURL, let url = nsURL as URL? {
+                            q.sync { dropped.append(url) }
+                        } else if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                            q.sync { dropped.append(url) }
+                        }
                     }
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+                    provider.loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { url, _ in
+                        defer { group.leave() }
+                        guard let url else { return }
+                        let dest = FileManager.default.temporaryDirectory
+                            .appendingPathComponent(url.lastPathComponent)
+                        try? FileManager.default.copyItem(at: url, to: dest)
+                        q.sync { dropped.append(dest) }
+                    }
+                } else {
+                    group.leave()
                 }
             }
             group.notify(queue: .main) {
@@ -1203,6 +1249,19 @@ struct DropFileTableView: View {
         Group {
             if !appState.files.isEmpty {
                 VStack(spacing: 0) {
+                    // Filtr podle typu souboru
+                    Picker("", selection: $appState.fileTypeFilter) {
+                        ForEach(FileTypeFilter.allCases, id: \.self) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 280)
+                    .padding(.horizontal, DS.Spacing.small)
+                    .padding(.vertical, DS.Spacing.xxSmall)
+
+                    Divider()
+
                     FileListHeader(
                         hiddenColumns: $appState.hiddenColumns,
                         sortKey: $appState.fileSortKey,
@@ -1212,9 +1271,17 @@ struct DropFileTableView: View {
 
                     Divider()
 
-                    List(appState.sortedFiles, selection: $appState.selectedFiles) { file in
-                        FileListRow(file: file, hiddenColumns: appState.hiddenColumns)
-                            .tag(file.id)
+                    List(selection: $appState.selectedFiles) {
+                        ForEach(appState.sortedFiles) { file in
+                            FileListRow(file: file, hiddenColumns: appState.hiddenColumns)
+                                .frame(height: appState.fileRowHeight)
+                                .tag(file.id)
+                        }
+                        // Drag & drop přeřazení řádků — aktivní pouze v manuálním pořadí
+                        .onMove(perform: appState.fileSortKey == .manual
+                            ? appState.moveFiles
+                            : nil
+                        )
                     }
                     .listStyle(.inset(alternatesRowBackgrounds: true))
                     .environment(\.font, .system(size: CGFloat(tableRowFontSize)))
@@ -1372,6 +1439,23 @@ struct FileListHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // Tlačítko pro přepnutí do manuálního pořadí (drag & drop řádků)
+            Button(action: {
+                if sortKey == .manual {
+                    // Vypnout manuální pořadí → vrátit se na třídění podle jména
+                    sortKey = .name
+                    sortAscending = true
+                } else {
+                    sortKey = .manual
+                }
+            }) {
+                Image(systemName: sortKey == .manual ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
+                    .foregroundColor(sortKey == .manual ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(sortKey == .manual ? "Manual order active – click to sort by name" : "Enable manual row reordering")
+            .padding(.trailing, 4)
+
             headerButton("File", key: .name)
                 .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
 
@@ -1474,21 +1558,12 @@ struct FileListRow: View {
     let hiddenColumns: Set<FileListColumn>
 
     var body: some View {
-        let isSelected = appState.selectedFiles.contains(file.id)
-        let rowContent = rowHStack
-
-        // .onDrag se aplikuje POUZE na již vybrané řádky.
-        // Na nevybraných řádcích gesture recognizer onDrag blokuje první klik → selection nefungovala.
-        if isSelected {
-            rowContent
-                .onDrag {
-                    NSItemProvider(object: file.url as NSURL)
-                } preview: {
-                    dragPreview
-                }
-        } else {
-            rowContent
-        }
+        rowHStack
+            .onDrag {
+                NSItemProvider(object: file.url as NSURL)
+            } preview: {
+                dragPreview
+            }
     }
 
     private var rowHStack: some View {
@@ -1527,6 +1602,51 @@ struct FileListRow: View {
                     }
                 }
                 .frame(width: colWidths.converted, alignment: .center)
+            }
+        }
+        .contextMenu {
+            Button("Zobrazit ve Finderu") {
+                NSWorkspace.shared.activateFileViewerSelecting([file.url])
+            }
+
+            if !appState.externalApps.isEmpty {
+                Menu("Otevřít v\u{2026}") {
+                    ForEach(appState.externalApps) { app in
+                        Button(app.name) {
+                            NSWorkspace.shared.open(
+                                [file.url],
+                                withApplicationAt: URL(fileURLWithPath: app.path),
+                                configuration: NSWorkspace.OpenConfiguration()
+                            )
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            Button("Přejmenovat\u{2026}") {
+                appState.showBatchRename = true
+            }
+
+            Button("Odstranit ze seznamu", role: .destructive) {
+                appState.files.removeAll { $0.id == file.id }
+                appState.selectedFiles.remove(file.id)
+            }
+
+            Divider()
+
+            // Akce podle typu souboru
+            if file.fileType == .pdf {
+                Button("Komprimovat PDF") {
+                    appState.showCompressionWindow = true
+                }
+            }
+            if file.fileType.isImage {
+                Button("Změnit velikost\u{2026}") {
+                    appState.resizeDialogFiles = [file]
+                    appState.showResizeDialog = true
+                }
             }
         }
     }
@@ -1676,6 +1796,19 @@ struct BottomActionBar: View {
             .disabled(appState.selectedFiles.isEmpty)
 
             Spacer()
+
+            // Slider pro velikost řádků v seznamu souborů
+            HStack(spacing: 4) {
+                Image(systemName: "text.justify")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Slider(value: $appState.thumbnailSize, in: 0...2, step: 1)
+                    .frame(width: 64)
+                Image(systemName: "list.bullet")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .help("Velikost řádků")
         }
     }
 }

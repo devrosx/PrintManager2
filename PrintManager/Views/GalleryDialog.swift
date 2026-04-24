@@ -157,6 +157,11 @@ struct GalleryDialog: View {
     @AppStorage("gallery.labelFont")    private var labelFontName:   String = "Helvetica Neue"
     @AppStorage("gallery.labelSize")    private var labelFontSize:   Double = 9
     @AppStorage("gallery.labelAlign")   private var labelAlignRaw:   String = GalleryLabelAlignment.center.rawValue
+    @AppStorage("gallery.labelStripNums") private var labelStripNumbers: Bool   = false
+    @AppStorage("gallery.labelPadTop")    private var labelPadTop:       Double = 0
+    @AppStorage("gallery.labelPadBottom") private var labelPadBottom:    Double = 0
+    @AppStorage("gallery.labelPadLeft")   private var labelPadLeft:      Double = 0
+    @AppStorage("gallery.labelPadRight")  private var labelPadRight:     Double = 0
     @AppStorage("gallery.resample")     private var resampleImages:  Bool   = true
     @AppStorage("gallery.imageEffect")  private var imageEffectRaw:  String = GalleryImageEffect.none.rawValue
     @AppStorage("gallery.featherEdges")  private var featherEdges:   Bool   = false
@@ -225,6 +230,9 @@ struct GalleryDialog: View {
             labelFontName: labelFontName, labelFontSize: labelFontSize,
             labelColor: labelColor, labelBackground: labelBackground,
             labelAlignment: labelAlignment,
+            labelStripNumbers: labelStripNumbers,
+            labelPadTop: labelPadTop, labelPadBottom: labelPadBottom,
+            labelPadLeft: labelPadLeft, labelPadRight: labelPadRight,
             imageEffect: imageEffect,
             duotoneShadowColor: duotoneShadow, duotoneHighlightColor: duotoneHighlight,
             featherEdges: featherEdges, featherAmount: featherAmount,
@@ -294,6 +302,7 @@ struct GalleryDialog: View {
             savedWidth  = size.width
             savedHeight = size.height
         })
+        .processingOverlay(isProcessing: $isProcessing)
         .onAppear { loadImageStates(); loadPresets() }
         .onChange(of: paperSizeRaw)   { _ in clampPreviewPage() }
         .onChange(of: orientationRaw) { _ in clampPreviewPage() }
@@ -795,6 +804,27 @@ struct GalleryDialog: View {
                                         .labelsHidden().frame(width: 28, height: 24)
                                 }
                             }
+                            // Odstranit číslování na konci názvu
+                            Toggle("Odstranit číslování", isOn: $labelStripNumbers)
+                                .help("Odstraní číslo na konci názvu souboru (např. 'Felix Slováček 2' → 'Felix Slováček')")
+                            // Odsazení textu (padding)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Odsazení textu (mm)").foregroundColor(.secondary).font(.caption)
+                                HStack(spacing: 4) {
+                                    Text("N").frame(width: 14).foregroundColor(.secondary).font(.caption)
+                                    TextField("", value: $labelPadTop, format: .number)
+                                        .textFieldStyle(.roundedBorder).frame(width: 40)
+                                    Text("J").frame(width: 14).foregroundColor(.secondary).font(.caption)
+                                    TextField("", value: $labelPadBottom, format: .number)
+                                        .textFieldStyle(.roundedBorder).frame(width: 40)
+                                    Text("L").frame(width: 14).foregroundColor(.secondary).font(.caption)
+                                    TextField("", value: $labelPadLeft, format: .number)
+                                        .textFieldStyle(.roundedBorder).frame(width: 40)
+                                    Text("P").frame(width: 14).foregroundColor(.secondary).font(.caption)
+                                    TextField("", value: $labelPadRight, format: .number)
+                                        .textFieldStyle(.roundedBorder).frame(width: 40)
+                                }
+                            }
                             let lh = settings.labelAreaHeightMM
                             Text(labelInside
                                  ? "Výška pruhu: \(String(format: "%.1f", lh)) mm (uvnitř)"
@@ -929,9 +959,10 @@ struct GalleryDialog: View {
 
                 await MainActor.run {
                     isProcessing = false
-                    appState.addFiles(urls: [destURL], autoSelect: true, markAsConverted: true)
-                    isPresented  = false
-                    appState.logSuccess("Galerie vytvořena: \(destURL.lastPathComponent)")
+                    appState.finishOperation(output: destURL,
+                                            message: "Galerie vytvořena: \(destURL.lastPathComponent)",
+                                            inputCount: imageFiles.count)
+                    isPresented = false
                 }
             } catch {
                 await MainActor.run {
@@ -1009,6 +1040,9 @@ struct GalleryDialog: View {
         p.labelAlignRaw  = labelAlignRaw
         p.labelColorHex      = galleryColorToHex(labelColor)
         p.labelBackgroundHex = galleryColorToHex(labelBackground)
+        p.labelStripNumbers  = labelStripNumbers
+        p.labelPadTop    = labelPadTop;    p.labelPadBottom = labelPadBottom
+        p.labelPadLeft   = labelPadLeft;   p.labelPadRight  = labelPadRight
         p.imageEffectRaw      = imageEffectRaw
         p.duotoneShadowHex    = galleryColorToHex(duotoneShadow)
         p.duotoneHighlightHex = galleryColorToHex(duotoneHighlight)
@@ -1043,6 +1077,9 @@ struct GalleryDialog: View {
         labelAlignRaw  = p.labelAlignRaw
         labelColor     = galleryColorFromHex(p.labelColorHex)
         labelBackground = galleryColorFromHex(p.labelBackgroundHex)
+        labelStripNumbers = p.labelStripNumbers
+        labelPadTop    = p.labelPadTop;    labelPadBottom = p.labelPadBottom
+        labelPadLeft   = p.labelPadLeft;   labelPadRight  = p.labelPadRight
         imageEffectRaw    = p.imageEffectRaw
         duotoneShadow     = galleryColorFromHex(p.duotoneShadowHex)
         duotoneHighlight  = galleryColorFromHex(p.duotoneHighlightHex)
@@ -1064,6 +1101,7 @@ struct GalleryDialog: View {
                 await MainActor.run {
                     isIDProcessing = false
                     appState.logSuccess("InDesign galerie otevřena v InDesignu (\(name)_gallery)")
+                    appState.notifyConversionComplete(fileCount: imageFiles.count, successCount: 1)
                 }
             } catch {
                 await MainActor.run {
@@ -1195,9 +1233,18 @@ struct GalleryPagePreview: View {
                                         : (layout.labelRectPx(localIndex: entry.localIdx, scale: scale)
                                            ?? CGRect(x: imgRect.minX, y: imgRect.maxY,
                                                      width: imgRect.width, height: lh))
-                                    let currentLabel = imageStates[entry.globalIdx].displayLabel
-                                    let displaySize  = CGFloat(settings.labelFontSize) * scale / 2.834645669
+                                    let currentLabel: String = {
+                                        let raw = imageStates[entry.globalIdx].displayLabel
+                                        return settings.labelStripNumbers
+                                            ? GalleryService.stripTrailingNumber(raw) : raw
+                                    }()
+                                    let displaySize  = CGFloat(settings.labelFontSize) * scale / RenderingConstants.pointsPerMillimeter
                                     let isEditing    = editingLabelID == entry.stateID
+                                    // Odsazení textu v náhledu (mm → px)
+                                    let padTop    = CGFloat(settings.labelPadTop)    * scale
+                                    let padBottom = CGFloat(settings.labelPadBottom) * scale
+                                    let padLeft   = CGFloat(settings.labelPadLeft)   * scale
+                                    let padRight  = CGFloat(settings.labelPadRight)  * scale
 
                                     if isEditing {
                                         // Inline textové pole
@@ -1219,16 +1266,19 @@ struct GalleryPagePreview: View {
                                                 if !focused { commitLabelEdit(editingLabelID) }
                                             }
                                     } else {
-                                        // Zobrazení
+                                        // Zobrazení s paddingem
                                         Text(currentLabel)
                                             .font(.custom(settings.labelFontName, size: displaySize))
                                             .lineLimit(1)
                                             .minimumScaleFactor(0.5)
-                                            .frame(width: lRect.width, height: lRect.height,
-                                                   alignment: settings.labelAlignment.swiftUIAlignment)
+                                            .frame(
+                                                width:  max(1, lRect.width  - padLeft - padRight),
+                                                height: max(1, lRect.height - padTop  - padBottom),
+                                                alignment: settings.labelAlignment.swiftUIAlignment
+                                            )
                                             .background(settings.labelBackground)
                                             .foregroundColor(settings.labelColor)
-                                            .offset(x: lRect.minX, y: lRect.minY)
+                                            .offset(x: lRect.minX + padLeft, y: lRect.minY + padTop)
                                             .allowsHitTesting(false)
                                     }
                                 }

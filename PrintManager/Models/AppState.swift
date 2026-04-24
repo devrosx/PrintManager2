@@ -20,6 +20,15 @@ enum QuickLookMode {
     case singlePage
 }
 
+// MARK: - File Type Filter
+
+enum FileTypeFilter: String, CaseIterable {
+    case all      = "Vše"
+    case pdf      = "PDF"
+    case image    = "Obrázky"
+    case document = "Dokumenty"
+}
+
 // MARK: - File List Column & Sort
 
 enum FileListColumn: String, CaseIterable, Codable {
@@ -33,6 +42,8 @@ enum FileListColumn: String, CaseIterable, Codable {
 
 enum FileSortKey: String, Codable {
     case name, size, kind, fileSize, pages, colors
+    /// Manuální pořadí — žádné třídění, pouze pořadí v `files`
+    case manual
 }
 
 // MARK: - ExternalApp Model
@@ -94,9 +105,14 @@ class AppState: ObservableObject {
     @Published var showMultiCropDialog = false
     @Published var multiCropFile: FileItem?
 
+    // LineArt Crop
+    @Published var showLineArtCropDialog = false
+    @Published var lineArtCropFile: FileItem?
+
     // Color Page Selector
     @Published var showColorPageSelector = false
     @Published var colorPageSelectorFile: FileItem?
+    @Published var colorPageSelectorQueue: [FileItem] = []
 
     // Imposition
     @Published var showingImpositionDialog = false
@@ -361,6 +377,20 @@ class AppState: ObservableObject {
         showCollageDialog = true
     }
 
+    // Background Fix (auto-levels)
+    @Published var showBackgroundFixDialog = false
+    @Published var backgroundFixFiles: [FileItem] = []
+
+    func openBackgroundFixDialog() {
+        let pdfs = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !pdfs.isEmpty else {
+            logWarning("Vyber alespoň jeden PDF soubor pro korekci pozadí")
+            return
+        }
+        backgroundFixFiles = pdfs
+        showBackgroundFixDialog = true
+    }
+
     // Background Removal
     func removeBackground() {
         let imgs = files.filter { selectedFiles.contains($0.id) && $0.fileType.isImage }
@@ -525,8 +555,34 @@ class AppState: ObservableObject {
         }
     }
 
+    // Thumbnail size: 0 = small, 1 = medium, 2 = large
+    @Published var thumbnailSize: Double = 1.0 {
+        didSet {
+            UserDefaults.standard.set(thumbnailSize, forKey: UDKeys.thumbnailSize)
+        }
+    }
+
+    /// Výška řádku v seznamu souborů dle zvoleného thumbnailSize.
+    var fileRowHeight: CGFloat {
+        switch Int(thumbnailSize.rounded()) {
+        case 0:  return 36
+        case 2:  return 72
+        default: return 52
+        }
+    }
+
+    /// Velikost miniatury v řádku souboru dle zvoleného thumbnailSize.
+    var fileThumbnailSize: CGFloat {
+        switch Int(thumbnailSize.rounded()) {
+        case 0:  return 28
+        case 2:  return 64
+        default: return 44
+        }
+    }
+
     // Search
     @Published var searchText: String = ""
+    @Published var fileTypeFilter: FileTypeFilter = .all
 
     // Loading state
     @Published var isLoading = false
@@ -539,6 +595,8 @@ class AppState: ObservableObject {
 
     var sortedFiles: [FileItem] {
         let base = filteredFiles
+        // Manuální pořadí — zachovej pořadí pole `files`, pouze aplikuj filtry
+        guard fileSortKey != .manual else { return base }
         return base.sorted { a, b in
             let result: Bool
             switch fileSortKey {
@@ -548,9 +606,47 @@ class AppState: ObservableObject {
             case .fileSize: result = a.fileSize < b.fileSize
             case .pages:    result = a.pageCount < b.pageCount
             case .colors:   result = a.colorInfo.localizedStandardCompare(b.colorInfo) == .orderedAscending
+            case .manual:   result = true   // nikdy sem nedojde — ošetřeno výše
             }
             return fileSortAscending ? result : !result
         }
+    }
+
+    /// Přesune soubory v manuálním pořadí (volá SwiftUI `.onMove`).
+    /// Indexy odpovídají `sortedFiles` (= `filteredFiles` při manual sortu).
+    /// Metoda je bezpečná i při aktivním filtru: přemapuje indexy ze zobrazeného
+    /// seznamu na pozice v hlavním poli `files`.
+    func moveFiles(from source: IndexSet, to destination: Int) {
+        guard fileSortKey == .manual else { return }
+
+        // Zobrazeným souborům odpovídají tyto UUID v daném pořadí
+        let displayedIDs = sortedFiles.map(\.id)
+
+        // Rekonstruuj cílový index: kam by v displayedIDs skončil prvek po přesunu
+        var reordered = displayedIDs
+        reordered.move(fromOffsets: source, toOffset: destination)
+
+        // Přemapuj nové pořadí do hlavního pole `files`.
+        // Soubory, které nejsou ve filtru, zůstanou na svých místech.
+        var newFiles: [FileItem] = []
+        var filteredQueue = reordered.compactMap { id in
+            files.first(where: { $0.id == id })
+        }
+        let filteredIDsSet = Set(displayedIDs)
+
+        for file in files {
+            if filteredIDsSet.contains(file.id) {
+                // Nahrad prvkem z přeuspořádané fronty
+                if let next = filteredQueue.first {
+                    newFiles.append(next)
+                    filteredQueue.removeFirst()
+                }
+            } else {
+                // Soubory mimo filtr zůstanou na místě
+                newFiles.append(file)
+            }
+        }
+        files = newFiles
     }
 
     private var columnCancellable: AnyCancellable?
@@ -560,6 +656,7 @@ class AppState: ObservableObject {
     init() {
         self.showPrinterPanel = UserDefaults.standard.object(forKey: UDKeys.showPrinterPanel) as? Bool ?? true
         self.showPreview = UserDefaults.standard.bool(forKey: UDKeys.showPreview)
+        self.thumbnailSize = UserDefaults.standard.object(forKey: UDKeys.thumbnailSize) as? Double ?? 1.0
 
         // Restore column/sort settings
         if let data = UserDefaults.standard.data(forKey: UDKeys.hiddenColumns),
@@ -642,15 +739,31 @@ class AppState: ObservableObject {
         }
     }
     
-    // Filtered files based on search
+    // Filtered files based on search text and file type filter
     var filteredFiles: [FileItem] {
-        if searchText.isEmpty {
-            return files
+        var result = files
+
+        // Textový filtr
+        if !searchText.isEmpty {
+            result = result.filter { file in
+                file.name.localizedCaseInsensitiveContains(searchText) ||
+                file.fileType.rawValue.localizedCaseInsensitiveContains(searchText)
+            }
         }
-        return files.filter { file in
-            file.name.localizedCaseInsensitiveContains(searchText) ||
-            file.fileType.rawValue.localizedCaseInsensitiveContains(searchText)
+
+        // Filtr podle typu souboru
+        switch fileTypeFilter {
+        case .all:
+            break
+        case .pdf:
+            result = result.filter { $0.fileType == .pdf }
+        case .image:
+            result = result.filter { $0.fileType.isImage }
+        case .document:
+            result = result.filter { $0.fileType.requiresConversion }
         }
+
+        return result
     }
     
     // Allowed file types
@@ -720,6 +833,17 @@ class AppState: ObservableObject {
                 result.append(item)
             }
         }
+    }
+
+    /// Jednotný helper pro dokončení operace: přidá výstupní soubor, zaloguje úspěch a pošle notifikaci.
+    /// - Parameters:
+    ///   - output: Výstupní URL
+    ///   - message: Text do activity logu
+    ///   - inputCount: Počet vstupních souborů (pro notifikaci)
+    func finishOperation(output: URL, message: String, inputCount: Int = 1) {
+        addFiles(urls: [output], autoSelect: true, markAsConverted: true)
+        logSuccess(message)
+        notifyConversionComplete(fileCount: inputCount, successCount: 1)
     }
 
     func addFiles(urls: [URL], autoSelect: Bool = false, markAsConverted: Bool = false) {
@@ -799,23 +923,17 @@ class AppState: ObservableObject {
                 parsed.id          = placeholderID   // zachovat UUID → selection zůstane
                 parsed.isConverted = isOutput
 
-                // Fáze 1: zobraz metadata okamžitě (thumbnail může být nil pokud nebyl v cache)
+                // Fáze 1: zobraz metadata okamžitě
                 DispatchQueue.main.async {
                     if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
                         self.files[idx] = parsed
-                        if parsed.thumbnail != nil { self.logSuccess("Loaded: \(parsed.name)") }
+                        self.logSuccess("Loaded: \(parsed.name)")
                     }
                 }
 
-                // Fáze 2: pokud thumbnail nebyl v cache, generuj a ulož na pozadí
-                if parsed.thumbnail == nil {
-                    let thumb = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
-                    DispatchQueue.main.async {
-                        if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
-                            self.files[idx].thumbnail = thumb
-                            self.logSuccess("Loaded: \(parsed.name)")
-                        }
-                    }
+                // Fáze 2: zajisti thumbnail v disk cache (views načítají přes ThumbnailCache.shared)
+                if ThumbnailCache.shared.thumbnail(for: url) == nil {
+                    _ = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
                 }
             }
         }
@@ -864,18 +982,13 @@ class AppState: ObservableObject {
                 DispatchQueue.main.async {
                     if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
                         self.files[idx] = parsed
-                        if parsed.thumbnail != nil { self.logSuccess("Loaded: \(parsed.name)") }
+                        self.logSuccess("Loaded: \(parsed.name)")
                     }
                 }
 
-                if parsed.thumbnail == nil {
-                    let thumb = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
-                    DispatchQueue.main.async {
-                        if let idx = self.files.firstIndex(where: { $0.id == placeholderID }) {
-                            self.files[idx].thumbnail = thumb
-                            self.logSuccess("Loaded: \(parsed.name)")
-                        }
-                    }
+                // Zajisti thumbnail v disk cache (views načítají přes ThumbnailCache.shared)
+                if ThumbnailCache.shared.thumbnail(for: url) == nil {
+                    _ = self.fileParser.generateThumbnail(url: url, fileType: parsed.fileType)
                 }
             }
         }
@@ -975,7 +1088,8 @@ class AppState: ObservableObject {
                         logSuccess("Printed: \(file.name)")
                     }
                 }
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     logSuccess("Print job completed")
                     notifyPrintComplete(
                         fileCount: filesToPrint.count,
@@ -983,7 +1097,8 @@ class AppState: ObservableObject {
                     )
                 }
             } catch {
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     logError("Print failed: \(error.localizedDescription)")
                     notifyError(title: "Print Failed", message: error.localizedDescription)
                 }
@@ -1076,7 +1191,8 @@ class AppState: ObservableObject {
                         warnings: []
                     )
                     
-                    await MainActor.run { [self] in
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
                         compressionResults.append(result)
                         compressionProgress = 0.0
                         compressionMessage = ""
@@ -1091,7 +1207,8 @@ class AppState: ObservableObject {
                     }
                 }
             } catch {
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     compressionProgress = 0.0
                     compressionMessage = ""
                     handleOperationError(error, operationDescription: "Failed to compress PDF")
@@ -1121,13 +1238,25 @@ class AppState: ObservableObject {
         showMultiCropDialog = true
     }
 
-    func openColorPageSelector() {
-        guard let selectedFile = getSelectedFile(), selectedFile.fileType == .pdf else {
-            logWarning("Select one PDF file for color page selection")
+    func openLineArtCropDialog() {
+        guard let selectedFile = getSelectedFile(), selectedFile.fileType.isImage else {
+            logWarning("Vyberte jeden obraz pro LineArt Crop")
             return
         }
-        logInfo("Opening color page selection for: \(selectedFile.name)")
-        colorPageSelectorFile = selectedFile
+        logInfo("Opening LineArt Crop for: \(selectedFile.name)")
+        lineArtCropFile = selectedFile
+        showLineArtCropDialog = true
+    }
+
+    func openColorPageSelector() {
+        let pdfFiles = files.filter { selectedFiles.contains($0.id) && $0.fileType == .pdf }
+        guard !pdfFiles.isEmpty else {
+            logWarning("Select at least one PDF file for color page selection")
+            return
+        }
+        logInfo("Opening color page selection for \(pdfFiles.count) file(s): \(pdfFiles.map(\.name).joined(separator: ", "))")
+        colorPageSelectorQueue = pdfFiles
+        colorPageSelectorFile = pdfFiles[0]
         showColorPageSelector = true
     }
 
@@ -1402,13 +1531,15 @@ class AppState: ObservableObject {
         Task {
             do {
                 let outputURL = try await imageService.convertToPDF(urls: imageFiles.map { $0.url })
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     logSuccess("Converted images to PDF")
                     addFiles(urls: [outputURL], autoSelect: true)
                     notifyConversionComplete(fileCount: imageFiles.count, successCount: 1)
                 }
             } catch {
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     handleOperationError(error, operationDescription: "Failed to convert to PDF")
                     notifyError(title: "Conversion Failed", message: error.localizedDescription)
                 }
@@ -1918,8 +2049,16 @@ class AppState: ObservableObject {
     /// Vytiskne soubory na konkrétní tiskárnu (drag & drop z file listu).
     func printFiles(urls: [URL], toPrinter printerName: String) {
         let urlStrings = Set(urls.map { $0.absoluteString })
-        let filesToPrint = files.filter { urlStrings.contains($0.url.absoluteString) }
-        guard !filesToPrint.isEmpty else { return }
+        var filesToPrint = files.filter { urlStrings.contains($0.url.absoluteString) }
+        // Pro URL které nejsou v seznamu (temp PDF ze stránek, externí soubory), parsuj přímo
+        if filesToPrint.isEmpty {
+            let parser = FileParser()
+            filesToPrint = urls.compactMap { parser.parseFile(url: $0) }
+        }
+        guard !filesToPrint.isEmpty else {
+            logWarning("Žádné soubory pro tisk")
+            return
+        }
 
         let presetOptions = availableSystemPresets.first(where: { $0.name == selectedPreset })?.lpOptions ?? []
         let settings = PrintSettings(
@@ -1935,23 +2074,26 @@ class AppState: ObservableObject {
             paperSize: printPaperSize
         )
 
-        logInfo("Tisknu \(filesToPrint.count) soubor(u) na \(printerName)...")
+        let filesToPrintFinal = filesToPrint
+        logInfo("Tisknu \(filesToPrintFinal.count) soubor(u) na \(printerName)...")
 
         Task {
             do {
-                for file in filesToPrint {
+                for file in filesToPrintFinal {
                     try await printService.printFile(file: file, settings: settings)
                     await MainActor.run {
                         updateFileStatus(id: file.id, status: .printed)
                         logSuccess("Vytisknuto: \(file.name)")
                     }
                 }
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     logSuccess("Tisk dokončen")
-                    notifyPrintComplete(fileCount: filesToPrint.count, printerName: printerName)
+                    notifyPrintComplete(fileCount: filesToPrintFinal.count, printerName: printerName)
                 }
             } catch {
-                await MainActor.run { [self] in
+                await MainActor.run { [weak self] in
+                        guard let self else { return }
                     logError("Tisk selhal: \(error.localizedDescription)")
                     notifyError(title: "Tisk selhal", message: error.localizedDescription)
                 }

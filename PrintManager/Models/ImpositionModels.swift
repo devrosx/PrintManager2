@@ -37,7 +37,7 @@ enum ImpositionPaperSize: String, CaseIterable, Identifiable {
 
     /// Size in points (portrait orientation). 1 pt = 1/72 inch; 1 mm ≈ 2.834645669 pt
     var size: CGSize {
-        let pt = { (mm: Double) -> CGFloat in CGFloat(mm * 2.834645669) }
+        let pt = { (mm: Double) -> CGFloat in CGFloat(mm) * RenderingConstants.pointsPerMillimeter }
         switch self {
         case .a5:       return CGSize(width: pt(148), height: pt(210))
         case .a4:       return CGSize(width: pt(210), height: pt(297))

@@ -9,6 +9,22 @@ import Foundation
 import CoreGraphics
 import SwiftUI
 
+// MARK: - Shared paper size values (mm, portrait orientation)
+
+private enum PaperSizesMM {
+    static let a8       = CGSize(width: 52,  height: 74)
+    static let a7       = CGSize(width: 74,  height: 105)
+    static let a6       = CGSize(width: 105, height: 148)
+    static let a5       = CGSize(width: 148, height: 210)
+    static let a4       = CGSize(width: 210, height: 297)
+    static let a3       = CGSize(width: 297, height: 420)
+    static let sra4     = CGSize(width: 225, height: 320)
+    static let sra3     = CGSize(width: 320, height: 450)
+    static let p480x320 = CGSize(width: 320, height: 480)
+    static let letter   = CGSize(width: 216, height: 279)
+    static let postcard = CGSize(width: 148, height: 105)
+}
+
 // MARK: - Paper Size
 
 enum GalleryPaperSize: String, CaseIterable, Identifiable {
@@ -37,18 +53,18 @@ enum GalleryPaperSize: String, CaseIterable, Identifiable {
     /// Velikost v mm (na výšku), šířka × výška
     var sizeMM: CGSize {
         switch self {
-        case .a8:       return CGSize(width: 52,   height: 74)
-        case .a7:       return CGSize(width: 74,   height: 105)
-        case .a6:       return CGSize(width: 105,  height: 148)
-        case .a5:       return CGSize(width: 148,  height: 210)
-        case .a4:       return CGSize(width: 210,  height: 297)
-        case .a3:       return CGSize(width: 297,  height: 420)
-        case .sra4:     return CGSize(width: 225,  height: 320)
-        case .sra3:     return CGSize(width: 320,  height: 450)
-        case .p480x320: return CGSize(width: 320,  height: 480)
-        case .letter:   return CGSize(width: 216,  height: 279)
-        case .postcard: return CGSize(width: 148,  height: 105)
-        case .custom:   return CGSize(width: 210,  height: 297)
+        case .a8:       return PaperSizesMM.a8
+        case .a7:       return PaperSizesMM.a7
+        case .a6:       return PaperSizesMM.a6
+        case .a5:       return PaperSizesMM.a5
+        case .a4:       return PaperSizesMM.a4
+        case .a3:       return PaperSizesMM.a3
+        case .sra4:     return PaperSizesMM.sra4
+        case .sra3:     return PaperSizesMM.sra3
+        case .p480x320: return PaperSizesMM.p480x320
+        case .letter:   return PaperSizesMM.letter
+        case .postcard: return PaperSizesMM.postcard
+        case .custom:   return PaperSizesMM.a4
         }
     }
 }
@@ -93,17 +109,17 @@ enum GalleryFrameSize: String, CaseIterable, Identifiable {
         case .s20x30:   return CGSize(width: 200, height: 300)
         case .square10: return CGSize(width: 100, height: 100)
         case .square15: return CGSize(width: 150, height: 150)
-        case .a8:       return CGSize(width: 52,  height: 74)
-        case .a7:       return CGSize(width: 74,  height: 105)
-        case .a6:       return CGSize(width: 105, height: 148)
-        case .a5:       return CGSize(width: 148, height: 210)
-        case .a4:       return CGSize(width: 210, height: 297)
-        case .a3:       return CGSize(width: 297, height: 420)
-        case .sra4:     return CGSize(width: 225, height: 320)
-        case .sra3:     return CGSize(width: 320, height: 450)
-        case .p480x320: return CGSize(width: 320, height: 480)
-        case .letter:   return CGSize(width: 216, height: 279)
-        case .postcard: return CGSize(width: 148, height: 105)
+        case .a8:       return PaperSizesMM.a8
+        case .a7:       return PaperSizesMM.a7
+        case .a6:       return PaperSizesMM.a6
+        case .a5:       return PaperSizesMM.a5
+        case .a4:       return PaperSizesMM.a4
+        case .a3:       return PaperSizesMM.a3
+        case .sra4:     return PaperSizesMM.sra4
+        case .sra3:     return PaperSizesMM.sra3
+        case .p480x320: return PaperSizesMM.p480x320
+        case .letter:   return PaperSizesMM.letter
+        case .postcard: return PaperSizesMM.postcard
         case .custom:   return nil
         }
     }
@@ -229,11 +245,16 @@ struct GallerySettings {
     var labelColor:        Color              = .black
     var labelBackground:   Color              = .clear
     var labelAlignment:    GalleryLabelAlignment = .center
+    var labelStripNumbers: Bool               = false  // odstraní číslo na konci názvu (např. "Foto 2" → "Foto")
+    var labelPadTop:       Double             = 0      // mm – odsazení textu od okraje oblasti popisku
+    var labelPadBottom:    Double             = 0      // mm
+    var labelPadLeft:      Double             = 0      // mm
+    var labelPadRight:     Double             = 0      // mm
 
     /// Fyzická výška oblasti popisku v mm (vždy z velikosti fontu, nezávisle na pozici)
     var labelAreaHeightMM: Double {
         guard showImageLabel else { return 0 }
-        return labelFontSize / 2.834645669 * 1.6 + 2.0
+        return labelFontSize / RenderingConstants.pointsPerMillimeter * 1.6 + 2.0
     }
 
     /// Výška extra prostoru pod rámečkem – 0 pokud je popisek uvnitř obrázku
@@ -358,6 +379,11 @@ struct GalleryPresetData: Codable, Identifiable {
     var labelAlignRaw:   String = GalleryLabelAlignment.center.rawValue
     var labelColorHex:      String = "#000000FF"
     var labelBackgroundHex: String = "#00000000"
+    var labelStripNumbers:  Bool   = false
+    var labelPadTop:     Double = 0
+    var labelPadBottom:  Double = 0
+    var labelPadLeft:    Double = 0
+    var labelPadRight:   Double = 0
 
     var imageEffectRaw:        String = GalleryImageEffect.none.rawValue
     var duotoneShadowHex:      String = "#0A2E6BFF"

@@ -47,7 +47,7 @@ struct StitchDialog: View {
                     ForEach(Array(imageFiles.enumerated()), id: \.element.id) { idx, file in
                         VStack(spacing: 3) {
                             Group {
-                                if let thumb = file.thumbnail {
+                                if let thumb = ThumbnailCache.shared.thumbnail(for: file.url) {
                                     Image(nsImage: thumb)
                                         .resizable()
                                         .scaledToFill()
@@ -163,6 +163,7 @@ struct StitchDialog: View {
             .background(DS.Colors.controlBackground)
         }
         .frame(width: 480)
+        .processingOverlay(isProcessing: $isStitching, label: "Zpracovávám stitch…")
     }
 
     // MARK: - Akce
@@ -199,9 +200,10 @@ struct StitchDialog: View {
                 let outURL = try await NativeStitchService.shared.stitch(urls: urls)
                 await MainActor.run {
                     isStitching = false
+                    appState.finishOperation(output: outURL,
+                                            message: "Stitch hotový: \(outURL.lastPathComponent)",
+                                            inputCount: imageFiles.count)
                     isPresented = false
-                    appState.logSuccess("Stitch hotový: \(outURL.lastPathComponent)")
-                    appState.addFiles(urls: [outURL], autoSelect: true)
                 }
             } catch {
                 await MainActor.run {

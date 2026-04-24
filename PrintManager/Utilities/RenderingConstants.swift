@@ -11,6 +11,9 @@ import CoreGraphics
 /// Centralized constants for rendering operations across the app
 enum RenderingConstants {
 
+    /// Převodní konstanta: 1 mm = 2.834645669 pt (ISO 32000 / PostScript)
+    static let pointsPerMillimeter: CGFloat = 2.834645669
+
     /// DPI (dots per inch) values for different quality levels
     enum DPI {
         /// Low quality for thumbnails (72 DPI)
@@ -82,4 +85,26 @@ enum RenderingConstants {
         /// Maximum number of thumbnails to load simultaneously
         static let maxSimultaneousThumbnails: Int = 20
     }
+}
+
+/// Standardized output file name suffixes used across all services.
+/// Keeps naming consistent throughout the app.
+enum OutputSuffix {
+    static let cropped          = "_cropped"
+    static let rotated          = "_rotated"
+    static let resized          = "_resized"
+    static let compressed       = "_compressed"
+    static let rasterized       = "_rasterized"
+    static let ocr              = "_ocr"
+    static let gray             = "_gray"
+    static let flattened        = "_flattened"
+    static let fixed            = "_fixed"
+    static let imposed          = "_imposed"
+    static let expanded         = "_expanded"
+    static let smartCrop        = "_sc"
+    static let selectiveGray    = "_selective_gray"
+    static let withBlankPage    = "_with_blank_page"
+    static let extractedImages  = "extracted_images"
+    static let extractedSub     = "extracted_subimages"
+    static let edited           = "_edited"
 }

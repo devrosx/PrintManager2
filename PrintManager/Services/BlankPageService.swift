@@ -48,7 +48,7 @@ class BlankPageService {
         
         // Create output URL
         let outputURL = url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_with_blank_page")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.withBlankPage)
             .appendingPathExtension("pdf")
         
         // Create new PDF document

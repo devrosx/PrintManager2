@@ -82,23 +82,18 @@ class FileParser {
             colorInfo  = detectPDFColorSpace(page: firstPage)
         }
 
-        // Thumbnail: disk cache → generuj z již načteného dokumentu → ulož
-        let thumbnail: NSImage?
-        if let cached = ThumbnailCache.shared.thumbnail(for: url) {
-            thumbnail = cached
-        } else {
+        // Thumbnail: zajisti disk cache (pro view lazy-loading přes ThumbnailCache.shared)
+        if ThumbnailCache.shared.thumbnail(for: url) == nil {
             let t = doc.page(at: 0).flatMap {
                 $0.thumbnail(of: CGSize(width: 80, height: 80), for: .mediaBox)
             }
-            thumbnail = t
             if let t { ThumbnailCache.shared.store(t, for: url) }
         }
 
         return FileItem(
             url: url, name: fileName, fileType: .pdf,
             fileSize: fileSize, pageCount: pageCount,
-            pageSize: pageSize, colorInfo: colorInfo,
-            thumbnail: thumbnail
+            pageSize: pageSize, colorInfo: colorInfo
         )
     }
 
@@ -121,20 +116,16 @@ class FileParser {
         let pageSize  = image.size
         let colorInfo = detectImageColorSpace(image: image)
 
-        let thumbnail: NSImage?
-        if let cached = ThumbnailCache.shared.thumbnail(for: url) {
-            thumbnail = cached
-        } else {
+        // Thumbnail: zajisti disk cache (pro view lazy-loading přes ThumbnailCache.shared)
+        if ThumbnailCache.shared.thumbnail(for: url) == nil {
             let t = image.resized(to: NSSize(width: 80, height: 80))
             ThumbnailCache.shared.store(t, for: url)
-            thumbnail = t
         }
 
         return FileItem(
             url: url, name: fileName, fileType: fileType,
             fileSize: fileSize, pageCount: 1,
-            pageSize: pageSize, colorInfo: colorInfo,
-            thumbnail: thumbnail
+            pageSize: pageSize, colorInfo: colorInfo
         )
     }
 

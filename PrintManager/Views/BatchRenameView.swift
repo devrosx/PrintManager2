@@ -19,6 +19,8 @@ struct BatchRenameView: View {
     @State private var startNumber: Int   = 1
     @State private var prependSize: Bool       = false  // přidat rozměr stránky jako prefix
     @State private var keepOriginalName: Bool  = false  // zachovat původní název (bez přečíslování)
+    @State private var changeExtension: Bool   = false
+    @State private var customExtension: String = ""
 
     // ── Stav ──────────────────────────────────────────────────────────────
     @State private var isRenaming = false
@@ -35,8 +37,14 @@ struct BatchRenameView: View {
         return "[\(wMM)x\(hMM)]_"
     }
 
+    private func effectiveExtension(for file: FileItem) -> String {
+        let trimmed = customExtension.trimmingCharacters(in: .whitespaces).lowercased()
+        if changeExtension && !trimmed.isEmpty { return trimmed }
+        return file.fileType.rawValue.lowercased()
+    }
+
     private func newName(for file: FileItem, index: Int) -> String {
-        let ext = file.fileType.rawValue.lowercased()
+        let ext = effectiveExtension(for: file)
         let prefix = sizePrefix(for: file) ?? ""
         if keepOriginalName && prependSize {
             return "\(prefix)\(file.name).\(ext)"
@@ -109,6 +117,32 @@ struct BatchRenameView: View {
                     }
                 }
                 .disabled(keepOriginalName && prependSize)
+
+                Section("Přípona") {
+                    Toggle("Změnit příponu souboru", isOn: $changeExtension)
+                        .onChange(of: changeExtension) { on in
+                            if on && customExtension.isEmpty {
+                                customExtension = selectedFiles.first
+                                    .map { $0.fileType.rawValue.lowercased() } ?? ""
+                            }
+                        }
+                    if changeExtension {
+                        HStack(spacing: 6) {
+                            Text(".")
+                                .foregroundColor(.secondary)
+                            TextField("přípona", text: $customExtension)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 100)
+                                .onChange(of: customExtension) { v in
+                                    // odebrat případnou tečku na začátku
+                                    if v.hasPrefix(".") { customExtension = String(v.dropFirst()) }
+                                }
+                            Text("(např. pdf, jpg, png, tif)")
+                                .font(DS.Typography.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
 
                 Section("Prefix") {
                     Toggle("Přidat rozměr stránky (mm)", isOn: $prependSize)
@@ -231,17 +265,18 @@ struct BatchRenameView: View {
                     // Aktualizovat záznam — zkopírovat existující FileItem, jen změnit URL a name.
                     // NEPARSOVAT znovu (blokuje UI u velkých PDF).
                     let newStem = newURL.deletingPathExtension().lastPathComponent
+                    let newExt = newURL.pathExtension.uppercased()
+                    let newType = FileType(rawValue: newExt) ?? file.fileType
                     let renamed = FileItem(
                         id: file.id,
                         url: newURL,
                         name: newStem,
-                        fileType: file.fileType,
+                        fileType: newType,
                         fileSize: file.fileSize,
                         pageCount: file.pageCount,
                         pageSize: file.pageSize,
                         colorInfo: file.colorInfo,
-                        status: file.status,
-                        thumbnail: file.thumbnail
+                        status: file.status
                     )
                     await MainActor.run {
                         appState.replaceFile(renamed)

@@ -202,7 +202,7 @@ class SmartCropService {
 
     private func outputPath(for url: URL) -> URL {
         url.deletingLastPathComponent()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_sc")
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + OutputSuffix.smartCrop)
             .appendingPathExtension(url.pathExtension)
     }
 

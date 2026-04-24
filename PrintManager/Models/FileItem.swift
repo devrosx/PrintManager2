@@ -20,7 +20,6 @@ struct FileItem: Identifiable, Hashable {
     let pageSize: CGSize
     let colorInfo: String
     var status: FileStatus
-    var thumbnail: NSImage?
     /// Inkrementuje se při každé modifikaci obsahu (rotace, crop…).
     /// Views ji používají pro detekci změny obsahu i při stejném UUID.
     var contentVersion: Int = 0
@@ -33,28 +32,26 @@ struct FileItem: Identifiable, Hashable {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
     }
     
+    private enum SizeConstants {
+        static let ptToMM: CGFloat = 0.352777778
+        static let matchTolerance: CGFloat = 5.0
+    }
+
     var pageSizeString: String {
         if pageSize.width == 0 || pageSize.height == 0 {
             return "N/A"
         }
-        
-        // Convert points to mm
-        let widthMM = pageSize.width * 0.352777778
-        let heightMM = pageSize.height * 0.352777778
-        
-        // Try to match common paper sizes
-        if abs(widthMM - 210) < 5 && abs(heightMM - 297) < 5 {
-            return "A4"
-        } else if abs(widthMM - 148) < 5 && abs(heightMM - 210) < 5 {
-            return "A5"
-        } else if abs(widthMM - 297) < 5 && abs(heightMM - 420) < 5 {
-            return "A3"
-        } else if abs(widthMM - 216) < 5 && abs(heightMM - 279) < 5 {
-            return "Letter"
-        } else if abs(widthMM - 216) < 5 && abs(heightMM - 356) < 5 {
-            return "Legal"
-        }
-        
+
+        let widthMM  = pageSize.width  * SizeConstants.ptToMM
+        let heightMM = pageSize.height * SizeConstants.ptToMM
+        let t        = SizeConstants.matchTolerance
+
+        if abs(widthMM - 210) < t && abs(heightMM - 297) < t { return "A4" }
+        if abs(widthMM - 148) < t && abs(heightMM - 210) < t { return "A5" }
+        if abs(widthMM - 297) < t && abs(heightMM - 420) < t { return "A3" }
+        if abs(widthMM - 216) < t && abs(heightMM - 279) < t { return "Letter" }
+        if abs(widthMM - 216) < t && abs(heightMM - 356) < t { return "Legal" }
+
         return "\(Int(widthMM))×\(Int(heightMM))mm"
     }
     
@@ -66,8 +63,7 @@ struct FileItem: Identifiable, Hashable {
          pageCount: Int,
          pageSize: CGSize,
          colorInfo: String,
-         status: FileStatus = .ready,
-         thumbnail: NSImage? = nil) {
+         status: FileStatus = .ready) {
         self.id = id
         self.url = url
         self.name = name
@@ -77,7 +73,6 @@ struct FileItem: Identifiable, Hashable {
         self.pageSize = pageSize
         self.colorInfo = colorInfo
         self.status = status
-        self.thumbnail = thumbnail
     }
     
     func hash(into hasher: inout Hasher) {
@@ -109,6 +104,9 @@ enum FileType: String, Codable {
     case tiff = "TIFF"
     case bmp = "BMP"
     case gif = "GIF"
+    case heic = "HEIC"
+    case webp = "WebP"
+    case raw = "RAW"
     case doc = "DOC"
     case docx = "DOCX"
     case xls = "XLS"
@@ -124,7 +122,7 @@ enum FileType: String, Codable {
         switch self {
         case .pdf:
             return "doc.richtext.fill"
-        case .jpeg, .png, .tiff, .bmp, .gif:
+        case .jpeg, .png, .tiff, .bmp, .gif, .heic, .webp, .raw:
             return "photo.fill"
         case .doc, .docx, .odt:
             return "doc.text.fill"
@@ -142,7 +140,7 @@ enum FileType: String, Codable {
         switch self {
         case .pdf:
             return Color(red: 0.85, green: 0.15, blue: 0.10)   // červená (PDF)
-        case .jpeg, .png, .tiff, .bmp, .gif:
+        case .jpeg, .png, .tiff, .bmp, .gif, .heic, .webp, .raw:
             return Color(red: 0.10, green: 0.50, blue: 0.90)   // modrá (obrázek)
         case .doc, .docx, .odt:
             return Color(red: 0.18, green: 0.38, blue: 0.78)   // tmavě modrá (Word)
@@ -157,7 +155,7 @@ enum FileType: String, Codable {
     
     var isImage: Bool {
         switch self {
-        case .jpeg, .png, .tiff, .bmp, .gif:
+        case .jpeg, .png, .tiff, .bmp, .gif, .heic, .webp, .raw:
             return true
         default:
             return false
@@ -191,6 +189,12 @@ enum FileType: String, Codable {
             return .bmp
         case "gif":
             return .gif
+        case "heic", "heif":
+            return .heic
+        case "webp":
+            return .webp
+        case "dng", "cr2", "cr3", "nef", "arw", "orf", "raf", "rw2", "raw":
+            return .raw
         case "doc":
             return .doc
         case "docx":

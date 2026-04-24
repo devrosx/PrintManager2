@@ -83,6 +83,8 @@ struct ModernToolbar: ToolbarContent {
                 Divider()
                 Button("Expand (Bleed)...") { appState.expandFileAction() }
                 Divider()
+                Button("Fix Background…")  { appState.openBackgroundFixDialog() }
+                Divider()
                 Button("Convert to Gray") { appState.convertToGray() }
                 Button("Flatten Transparency") { appState.flattenTransparency() }
                 Button("Fix PDF") { appState.fixPDF() }
@@ -101,6 +103,11 @@ struct ModernToolbar: ToolbarContent {
                     .disabled(appState.files.filter({ appState.selectedFiles.contains($0.id) && $0.fileType.isImage }).count < 2)
                 Divider()
                 Button("Create Gallery…")    { appState.openGalleryDialog() }
+                Divider()
+                Button("Create Collage…") { appState.openCollageDialog() }
+                    .disabled(appState.files.filter {
+                        appState.selectedFiles.contains($0.id) && $0.fileType.isImage
+                    }.count < 2)
             } label: {
                 Label("Image", systemImage: "photo")
             }

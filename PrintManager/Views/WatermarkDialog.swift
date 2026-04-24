@@ -173,6 +173,7 @@ struct WatermarkDialog: View {
             .background(DS.Colors.controlBackground)
         }
         .frame(width: 440)
+        .processingOverlay(isProcessing: $isProcessing)
     }
 
     // MARK: - Akce

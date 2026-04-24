@@ -51,7 +51,7 @@ final class TilePDFService {
     static let shared = TilePDFService()
     private init() {}
 
-    private let mmToPt: CGFloat = 2.834645669
+    private let mmToPt: CGFloat = RenderingConstants.pointsPerMillimeter
 
     // MARK: - Public API
 
